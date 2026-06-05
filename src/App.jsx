@@ -1,16 +1,16 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { DURACION_TRATAMIENTOS, HORARIOS_SALIDA, COLORES_PERSONAL } from './data/config';
+import { DURACION_TRATAMIENTOS, HORARIOS_SALIDA, COLORES_PERSONAL, PERSONAL_CLINICA } from './data/config';
 import Formulario from './components/Formulario';
 import Calendario from './components/Calendario';
 
 function App() {
-  const fechaFijaPrueba = "2026-05-31"; // Ajustado al día de hoy para que se posicione bien al cargar
+  const fechaFijaPrueba = new Date().toISOString().split('T')[0]; 
 
-  // 100% VACÍO: Sin pacientes ficticios ni citas iniciales instaladas
+  // Agenda 100% vacía al arrancar
   const [citas, setCitas] = useState([]);
 
-  // Estados del formulario
+  // Estados del formulario principal
   const [paciente, setPaciente] = useState('');
   const [fecha, setFecha] = useState(fechaFijaPrueba);
   const [hora, setHora] = useState('09:00'); 
@@ -44,7 +44,7 @@ function App() {
     }
   }, [hora, tratamiento, principal, fecha]);
 
-  // Algoritmo de validación por texto plano (Blindado)
+  // Validador universal por texto plano
   const comprobarDisponibilidad = (fechaNueva, horaInicioNueva, horaFinNueva, personalAComprobar, idCitaExcluida = null) => {
     const [hIn, mIn] = horaInicioNueva.split(':').map(Number);
     const [hFi, mFi] = horaFinNueva.split(':').map(Number);
@@ -76,7 +76,7 @@ function App() {
     return true; 
   };
 
-  // Generador de títulos dinámicos con soporte para el nombre del Paciente
+  // Generador de títulos y colores comerciales
   const calcularMetadatosCita = (principalElegido, asistenteElegido, tratamientoKey, finId, nombrePaciente) => {
     const infoTratamiento = DURACION_TRATAMIENTOS[tratamientoKey];
     const horaFinTexto = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
@@ -100,12 +100,13 @@ function App() {
     return { backgroundColor, title, pacienteLimpio };
   };
 
+  // Crear cita desde el formulario lateral
   const handleCrearCita = (e) => {
     e.preventDefault();
     setError('');
 
     if (!principal) {
-      setError('⚠️ Error: Debes seleccionar un Especialista Principal en el desplegable.');
+      setError('⚠️ Error: Debes seleccionar un Especialista Principal.');
       return;
     }
 
@@ -117,12 +118,12 @@ function App() {
     const horaFinTexto = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
 
     if (!comprobarDisponibilidad(fecha, horaInicioTexto, horaFinTexto, principal)) {
-      setError(`❌ Conflicto de Agenda: ${principal} ya está ocupada en ese rango horario.`);
+      setError(`❌ Conflicto: ${principal} está ocupada en ese horario.`);
       return;
     }
 
     if (asistente !== 'Ninguno' && !comprobarDisponibilidad(fecha, horaInicioTexto, horaFinTexto, asistente)) {
-      setError(`❌ Conflicto de Agenda: El asistente elegido (${asistente}) está ocupado.`);
+      setError(`❌ Conflicto: El asistente (${asistente}) está ocupado.`);
       return;
     }
 
@@ -152,36 +153,50 @@ function App() {
   };
 
   const handleActualizarCita = (id, datosActualizados) => {
-    const tFinTexto = datosActualizados.end.split('T')[1].slice(0, 5);
-
     const citasModificadas = citas.map(cita => {
       if (cita.id === id) {
-        const equipo = [datosActualizados.principal];
-        if (datosActualizados.asistente !== 'Ninguno') equipo.push(datosActualizados.asistente);
+        const [fechaCita] = cita.start.split('T');
+        
+        const nuevoPrincipal = datosActualizados.principal || cita.extendedProps.principal;
+        const nuevoAsistente = datosActualizados.asistente || cita.extendedProps.asistente;
+        const nuevoTratamientoKey = datosActualizados.treatmentKey || cita.extendedProps.tratamientoKey;
+        const nuevoPaciente = datosActualizados.paciente !== undefined ? datosActualizados.paciente : cita.extendedProps.paciente;
+        
+        let nuevoStart = datosActualizados.start || cita.start;
+        let nuevoEnd = datosActualizados.end;
 
-        const dummyFin = new Date(datosActualizados.end);
-        const pacienteExistente = datosActualizados.paciente || cita.extendedProps.paciente || "Paciente";
+        if (datosActualizados.horaInicioManual) {
+          nuevoStart = `${fechaCita}T${datosActualizados.horaInicioManual}:00`;
+          const infoTratamiento = DURACION_TRATAMIENTOS[nuevoTratamientoKey];
+          const dummyInicio = new Date(nuevoStart);
+          const dummyFin = new Date(dummyInicio.getTime() + infoTratamiento.minutos * 60000);
+          nuevoEnd = `${fechaCita}T${String(dummyFin.getHours()).padStart(2, '0')}:${String(dummyFin.getMinutes()).padStart(2, '0')}:00`;
+        }
 
+        const equipo = [nuevoPrincipal];
+        if (nuevoAsistente !== 'Ninguno') equipo.push(nuevoAsistente);
+
+        const dummyFinObj = new Date(nuevoEnd);
         const { backgroundColor, title } = calcularMetadatosCita(
-          datosActualizados.principal,
-          datosActualizados.asistente,
-          datosActualizados.tratamientoKey || cita.extendedProps.tratamientoKey,
-          dummyFin,
-          pacienteExistente
+          nuevoPrincipal,
+          nuevoAsistente,
+          nuevoTratamientoKey,
+          dummyFinObj,
+          nuevoPaciente
         );
 
         return {
           ...cita,
-          start: datosActualizados.start,
-          end: datosActualizados.end,
+          start: nuevoStart,
+          end: nuevoEnd,
           title,
           backgroundColor,
           extendedProps: { 
-            ...cita.extendedProps, 
-            ...datosActualizados, 
             personalInvolucrado: equipo, 
-            tratamientoKey: datosActualizados.tratamientoKey || cita.extendedProps.tratamientoKey,
-            paciente: pacienteExistente
+            tratamientoKey: nuevoTratamientoKey, 
+            principal: nuevoPrincipal, 
+            asistente: nuevoAsistente,
+            paciente: nuevoPaciente
           }
         };
       }
@@ -222,6 +237,7 @@ function App() {
         <div className="lg:col-span-3">
           <Calendario
             citas={citas}
+            personalList={PERSONAL_CLINICA} // 👈 PASAMOS LA LISTA DE ESPECIALISTAS
             comprobarDisponibilidad={(ini, fin, pers, idEx) => {
               const f = ini.toISOString().split('T')[0];
               const hIn = ini.toTimeString().slice(0, 5);
