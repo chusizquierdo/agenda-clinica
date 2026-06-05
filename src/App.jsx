@@ -3,23 +3,37 @@ import React, { useState, useEffect } from 'react';
 import { DURACION_TRATAMIENTOS, HORARIOS_SALIDA, COLORES_PERSONAL, PERSONAL_CLINICA } from './data/config';
 import Formulario from './components/Formulario';
 import Calendario from './components/Calendario';
+import Estadisticas from './components/Estadisticas'; // 👈 Importamos nuestro nuevo módulo
+import { BarChart3, ArrowLeft } from 'lucide-react';
 
 function App() {
   const fechaFijaPrueba = new Date().toISOString().split('T')[0]; 
 
-  // Agenda 100% vacía al arrancar
-  const [citas, setCitas] = useState([]);
+  // 💾 Base de datos local
+  const [citas, setCitas] = useState(() => {
+    const citasGuardadas = localStorage.getItem('agenda_clinica_citas');
+    return citasGuardadas ? JSON.parse(citasGuardadas) : [];
+  });
 
-  // Estados del formulario principal
+  // Control de la pantalla activa ('calendario' o 'estadisticas')
+  const [vistaActual, setVistaActual] = useState('calendario');
+  
+  // Estados de los formularios
   const [paciente, setPaciente] = useState('');
   const [fecha, setFecha] = useState(fechaFijaPrueba);
   const [hora, setHora] = useState('09:00'); 
   const [tratamiento, setTratamiento] = useState('revision'); 
   const [principal, setPrincipal] = useState('');
   const [asistente, setAsistente] = useState('Ninguno');
+  const [observaciones, setObservaciones] = useState('');
   const [error, setError] = useState('');
   const [advertencia, setAdvertencia] = useState('');
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
+
+  // 💾 Auto-guardado en LocalStorage
+  useEffect(() => {
+    localStorage.setItem('agenda_clinica_citas', JSON.stringify(citas));
+  }, [citas]);
 
   useEffect(() => {
     if (principal && principal === asistente) {
@@ -44,7 +58,6 @@ function App() {
     }
   }, [hora, tratamiento, principal, fecha]);
 
-  // Validador universal por texto plano
   const comprobarDisponibilidad = (fechaNueva, horaInicioNueva, horaFinNueva, personalAComprobar, idCitaExcluida = null) => {
     const [hIn, mIn] = horaInicioNueva.split(':').map(Number);
     const [hFi, mFi] = horaFinNueva.split(':').map(Number);
@@ -76,7 +89,6 @@ function App() {
     return true; 
   };
 
-  // Generador de títulos y colores comerciales
   const calcularMetadatosCita = (principalElegido, asistenteElegido, tratamientoKey, finId, nombrePaciente) => {
     const infoTratamiento = DURACION_TRATAMIENTOS[tratamientoKey];
     const horaFinTexto = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
@@ -94,13 +106,12 @@ function App() {
       title = `⚠️ SOBREPASADO (${horaFinTexto}) - 👤 ${pacienteLimpio} [${infoTratamiento.nombre}]`;
     } else {
       backgroundColor = COLORES_PERSONAL[principalElegido] || '#64748b';
-      title = `👤 ${pacienteLimpio} - ${infoTratamiento.nombre} [Dirige: ${principalElegido}${asistenteElegido !== 'Ninguno' ? ` + Aux: ${asistenteElegido}` : ''}]`;
+      title = `👤 ${pacienteLimpio} - ${infoTratamiento.nombre}`;
     }
 
     return { backgroundColor, title, pacienteLimpio };
   };
 
-  // Crear cita desde el formulario lateral
   const handleCrearCita = (e) => {
     e.preventDefault();
     setError('');
@@ -110,7 +121,7 @@ function App() {
       return;
     }
 
-    const infoTratamiento = DURACION_TRATAMIENTOS[tratamiento];
+    const infoTratamiento = DURACION_TRATAMIENTOS[tratamiento]; 
     const dummy = new Date(`${fecha}T${hora}:00`);
     const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
     
@@ -143,13 +154,14 @@ function App() {
         tratamientoKey: tratamiento, 
         principal, 
         asistente,
-        paciente: pacienteLimpio
+        paciente: pacienteLimpio,
+        observaciones: observaciones.trim()
       }
     };
 
     setCitas([...citas, nuevaCita]);
-    setPrincipal('');
     setPaciente(''); 
+    setObservaciones('');
   };
 
   const handleActualizarCita = (id, datosActualizados) => {
@@ -161,6 +173,7 @@ function App() {
         const nuevoAsistente = datosActualizados.asistente || cita.extendedProps.asistente;
         const nuevoTratamientoKey = datosActualizados.treatmentKey || cita.extendedProps.tratamientoKey;
         const nuevoPaciente = datosActualizados.paciente !== undefined ? datosActualizados.paciente : cita.extendedProps.paciente;
+        const nuevasObservaciones = datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : cita.extendedProps.observaciones;
         
         let nuevoStart = datosActualizados.start || cita.start;
         let nuevoEnd = datosActualizados.end;
@@ -196,7 +209,8 @@ function App() {
             tratamientoKey: nuevoTratamientoKey, 
             principal: nuevoPrincipal, 
             asistente: nuevoAsistente,
-            paciente: nuevoPaciente
+            paciente: nuevoPaciente,
+            observaciones: nuevasObservaciones
           }
         };
       }
@@ -214,43 +228,72 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <h1 className="text-xl font-bold text-slate-800">🩺 Gestor Clínico Pro</h1>
-        <p className="text-xs text-slate-500">Arquitectura modular profesional y control de tiempos</p>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        <div className="lg:col-span-1">
-          <Formulario
-            fecha={fecha} setFecha={setFecha}
-            hora={hora} setHora={setHora}
-            tratamiento={tratamiento} setTratamiento={setTratamiento}
-            principal={principal} setPrincipal={setPrincipal}
-            asistente={asistente} setAsistente={setAsistente}
-            paciente={paciente} setPaciente={setPaciente}
-            error={error}
-            advertencia={advertencia}
-            handleCrearCita={handleCrearCita}
-          />
+      {/* HEADER LIMPIO */}
+      <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4 hide-on-print">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">🩺 Gestor Clínico Pro</h1>
+          <p className="text-xs text-slate-500">Arquitectura modular profesional y analíticas</p>
         </div>
         
-        <div className="lg:col-span-3">
-          <Calendario
-            citas={citas}
-            personalList={PERSONAL_CLINICA} // 👈 PASAMOS LA LISTA DE ESPECIALISTAS
-            comprobarDisponibilidad={(ini, fin, pers, idEx) => {
-              const f = ini.toISOString().split('T')[0];
-              const hIn = ini.toTimeString().slice(0, 5);
-              const hFi = fin.toTimeString().slice(0, 5);
-              return comprobarDisponibilidad(f, hIn, hFi, pers, idEx);
-            }}
-            handleActualizarCita={handleActualizarCita}
-            handleEliminarCita={handleEliminarCita}
-            citaSeleccionada={citaSeleccionada}
-            setCitaSeleccionada={setCitaSeleccionada}
-          />
+        <div>
+          {vistaActual === 'calendario' ? (
+            <button
+              onClick={() => setVistaActual('estadisticas')}
+              className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
+            >
+              <BarChart3 size={16} /> 📊 Ver Estadísticas Mensuales
+            </button>
+          ) : (
+            <button
+              onClick={() => setVistaActual('calendario')}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
+            >
+              <ArrowLeft size={16} /> 📅 Volver al Calendario
+            </button>
+          )}
         </div>
-      </div>
+      </header>
+
+      {/* CONTROL DE VISTAS TOTALMENTE MODULAR */}
+      {vistaActual === 'calendario' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+          <div className="lg:col-span-1 hide-on-print">
+            <Formulario
+              fecha={fecha} setFecha={setFecha}
+              hora={hora} setHora={setHora}
+              tratamiento={tratamiento} setTratamiento={setTratamiento}
+              principal={principal} setPrincipal={setPrincipal}
+              asistente={asistente} setAsistente={setAsistente}
+              paciente={paciente} setPaciente={setPaciente}
+              observaciones={observaciones} setObservaciones={setObservaciones}
+              error={error}
+              advertencia={advertencia}
+              handleCrearCita={handleCrearCita}
+            />
+          </div>
+          
+          <div className="lg:col-span-3">
+            <Calendario
+              citas={citas}
+              fechaActual={fecha} 
+              personalList={PERSONAL_CLINICA}
+              comprobarDisponibilidad={(ini, fin, pers, idEx) => {
+                const f = ini.toISOString().split('T')[0];
+                const hIn = ini.toTimeString().slice(0, 5);
+                const hFi = fin.toTimeString().slice(0, 5);
+                return comprobarDisponibilidad(f, hIn, hFi, pers, idEx);
+              }}
+              handleActualizarCita={handleActualizarCita}
+              handleEliminarCita={handleEliminarCita}
+              citaSeleccionada={citaSeleccionada}
+              setCitaSeleccionada={setCitaSeleccionada}
+            />
+          </div>
+        </div>
+      ) : (
+        /* ¡Inyección limpia del nuevo componente modular! 🚀 */
+        <Estadisticas citas={citas} personalList={PERSONAL_CLINICA} />
+      )}
     </div>
   );
 }

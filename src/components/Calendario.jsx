@@ -8,7 +8,8 @@ import { DURACION_TRATAMIENTOS } from '../data/config';
 
 function Calendario({ 
   citas, 
-  personalList, // Lista de especialistas recibida desde App.jsx
+  fechaActual, 
+  personalList, 
   comprobarDisponibilidad, 
   handleActualizarCita, 
   handleEliminarCita,
@@ -16,18 +17,17 @@ function Calendario({
   setCitaSeleccionada 
 }) {
 
-  // Estado para saber qué filtro está activo ('Todos' por defecto)
   const [filtroEspecialista, setFiltroEspecialista] = useState('Todos');
 
-  // Estados internos del Formulario Flotante de Edición
+  // Estados del modal de edición
   const [editPaciente, setEditPaciente] = useState('');
   const [editHora, setEditHora] = useState('');
   const [editTratamiento, setEditTratamiento] = useState('revision');
   const [editPrincipal, setEditPrincipal] = useState('');
   const [editAsistente, setEditAsistente] = useState('Ninguno');
+  const [editObservaciones, setEditObservaciones] = useState(''); // 📝 Notas internas del modal
   const [errorModal, setErrorModal] = useState('');
 
-  // Al abrir la cita, cargamos todos sus valores actuales en los inputs
   useEffect(() => {
     if (citaSeleccionada) {
       const props = citaSeleccionada.extendedProps;
@@ -38,6 +38,7 @@ function Calendario({
       setEditTratamiento(props.tratamientoKey || 'revision');
       setEditPrincipal(props.principal || '');
       setEditAsistente(props.asistente || 'Ninguno');
+      setEditObservaciones(props.observaciones || ''); // 📝 Cargamos observaciones guardadas
       setErrorModal('');
     }
   }, [citaSeleccionada]);
@@ -60,7 +61,6 @@ function Calendario({
   const handleEventDropOrResize = (info) => {
     const { event } = info;
     const props = event.extendedProps;
-
     const inicioDate = new Date(event.startStr);
     const finDate = new Date(event.endStr);
 
@@ -76,10 +76,7 @@ function Calendario({
       return;
     }
 
-    handleActualizarCita(event.id, {
-      start: event.startStr,
-      end: event.endStr
-    });
+    handleActualizarCita(event.id, { start: event.startStr, end: event.endStr });
   };
 
   const GuardarCambiosModal = (e) => {
@@ -93,7 +90,6 @@ function Calendario({
 
     const fechaDia = citaSeleccionada.start.split('T')[0];
     const infoTratamiento = DURACION_TRATAMIENTOS[editTratamiento];
-    
     const dummyInicio = new Date(`${fechaDia}T${editHora}:00`);
     const dummyFin = new Date(dummyInicio.getTime() + infoTratamiento.minutos * 60000);
 
@@ -112,51 +108,28 @@ function Calendario({
       treatmentKey: editTratamiento,
       principal: editPrincipal,
       asistente: editAsistente,
-      paciente: editPaciente
+      paciente: editPaciente,
+      observaciones: editObservaciones.trim() // 📝 Pasamos la nota editada de vuelta
     });
   };
 
-  // 👥 FILTRADO EN TIEMPO REAL: Decidimos qué citas se mandan a la pantalla
   const citasFiltradas = citas.filter(cita => {
     if (filtroEspecialista === 'Todos') return true;
-    
     const equipo = cita.extendedProps?.personalInvolucrado || [];
     return equipo.includes(filtroEspecialista);
   });
 
+  const handleImprimirDia = () => {
+    window.print();
+  };
+
+  const citasDeHoyParaImprimir = citas
+    .filter(c => c.start.startsWith(fechaActual))
+    .sort((a, b) => a.start.localeCompare(b.start));
+
   return (
     <div className="bg-white p-4 rounded-xl shadow-md border border-slate-200">
       
-      {/* BARRA SUPERIOR DE FILTROS EN TIEMPO REAL */}
-      <div className="mb-4 bg-slate-100 p-2 rounded-xl flex flex-wrap gap-2 items-center">
-        <span className="text-xs font-bold text-slate-500 uppercase px-2">Filtrar Agenda:</span>
-        
-        <button
-          onClick={() => setFiltroEspecialista('Todos')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            filtroEspecialista === 'Todos'
-              ? 'bg-slate-800 text-white shadow-sm'
-              : 'bg-white text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          👁️ Ver Todo
-        </button>
-
-        {personalList.map(nombre => (
-          <button
-            key={nombre}
-            onClick={() => setFiltroEspecialista(nombre)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              filtroEspecialista === nombre
-                ? 'bg-blue-600 text-white shadow-md scale-105'
-                : 'bg-white text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            👤 {nombre}
-          </button>
-        ))}
-      </div>
-
       <style>{`
         .fc-v-event {
           padding: 6px 8px !important;
@@ -172,35 +145,139 @@ function Calendario({
         .fc-timegrid-slot {
           height: 3.5rem !important;
         }
+
+        #print-sheet { display: none; }
+
+        @media print {
+          body {
+            background: white !important;
+            color: black !important;
+            font-family: sans-serif !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .hide-on-print { display: none !important; }
+          #print-sheet { display: block !important; width: 100% !important; }
+          table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+          th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; font-size: 12px; }
+          th { background-color: #f1f5f9 !important; font-weight: bold; }
+        }
       `}</style>
 
-      <FullCalendar
-        plugins={[timeGridPlugin, interactionPlugin]}
-        initialView="timeGridWeek"
-        initialDate={new Date().toISOString().split('T')[0]} 
-        locale={esLocale}
-        events={citasFiltradas} // 👈 Pasamos únicamente las citas filtradas
-        editable={true}
-        selectable={false}
-        slotMinTime="08:00:00"
-        slotMaxTime="21:00:00"
-        allDaySlot={false}
-        slotDuration="00:15:00"
-        expandRows={true}
-        aspectRatio={1.1}
-        eventClick={handleEventClick}
-        eventDrop={handleEventDropOrResize}
-        eventResize={handleEventDropOrResize}
-        headerToolbar={{
-          left: 'prev,next today',
-          center: 'title',
-          right: ''
-        }}
-      />
+      {/* BARRA SUPERIOR DE FILTROS E IMPRESIÓN */}
+      <div className="mb-4 bg-slate-100 p-2 rounded-xl flex flex-wrap gap-2 items-center justify-between hide-on-print">
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-bold text-slate-500 uppercase px-2">Filtrar:</span>
+          <button
+            onClick={() => setFiltroEspecialista('Todos')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              filtroEspecialista === 'Todos' ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            👁️ Ver Todo
+          </button>
+          {personalList.map(nombre => (
+            <button
+              key={nombre}
+              onClick={() => setFiltroEspecialista(nombre)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                filtroEspecialista === nombre ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              👤 {nombre}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={handleImprimirDia}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+        >
+          🖨️ Imprimir Hoja del Día
+        </button>
+      </div>
+
+      {/* CONTENEDOR DEL CALENDARIO EN PANTALLA */}
+      <div className="hide-on-print">
+        <FullCalendar
+          plugins={[timeGridPlugin, interactionPlugin]}
+          initialView="timeGridWeek"
+          initialDate={new Date().toISOString().split('T')[0]} 
+          locale={esLocale}
+          events={citasFiltradas}
+          editable={true}
+          selectable={false}
+          slotMinTime="08:00:00"
+          slotMaxTime="21:00:00"
+          allDaySlot={false}
+          slotDuration="00:15:00"
+          expandRows={true}
+          aspectRatio={1.1}
+          eventClick={handleEventClick}
+          eventDrop={handleEventDropOrResize}
+          eventResize={handleEventDropOrResize}
+          headerToolbar={{
+            left: 'prev,next today',
+            center: 'title',
+            right: ''
+          }}
+        />
+      </div>
+
+      {/* 📜 VISTA IMPRESA CON LA NUEVA COLUMNA DE OBSERVACIONES */}
+      <div id="print-sheet">
+        <div style={{ display: 'flex', justifyContent: 'between', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '10px' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '20px' }}>📋 HOJA DE TRABAJO DIARIA</h1>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#475569' }}>Fecha de la Agenda: <strong>{fechaActual}</strong></p>
+          </div>
+          <div style={{ textAlign: 'right', fontSize: '11px', color: '#64748b' }}>
+            Impreso el: {new Date().toLocaleDateString('es-ES')}
+          </div>
+        </div>
+
+        {citasDeHoyParaImprimir.length === 0 ? (
+          <p style={{ marginTop: '30px', textAlign: 'center', fontStyle: 'italic', color: '#64748b' }}>
+            No hay citas agendadas para este día en la clínica.
+          </p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '12%' }}>Horario</th>
+                <th style={{ width: '23%' }}>Paciente</th>
+                <th style={{ width: '18%' }}>Tratamiento</th>
+                <th style={{ width: '12%' }}>Principal</th>
+                <th style={{ width: '12%' }}>Asistente</th>
+                <th style={{ width: '23%' }}>Observaciones</th> {/* 👈 NUEVA COLUMNA */}
+              </tr>
+            </thead>
+            <tbody>
+              {citasDeHoyParaImprimir.map(cita => {
+                const horaIn = cita.start.split('T')[1].slice(0, 5);
+                const horaFi = cita.end.split('T')[1].slice(0, 5);
+                const infoT = DURACION_TRATAMIENTOS[cita.extendedProps.tratamientoKey];
+                
+                return (
+                  <tr key={cita.id}>
+                    <td><strong>{horaIn} - {horaFi}</strong></td>
+                    <td>{cita.extendedProps.paciente}</td>
+                    <td>{infoT ? infoT.nombre : 'Revisión'}</td>
+                    <td>{cita.extendedProps.principal}</td>
+                    <td>{cita.extendedProps.asistente === 'Ninguno' ? '-' : cita.extendedProps.asistente}</td>
+                    {/* Imprime las anotaciones o una celda vacía elegante */}
+                    <td><span style={{ fontSize: '11px', fontStyle: 'italic' }}>{cita.extendedProps.observaciones || '-'}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {/* MODAL DE EDICIÓN FLOTANTE */}
       {citaSeleccionada && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 hide-on-print">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full border border-slate-300 overflow-hidden">
             
             <div className="bg-slate-800 p-4 text-white flex justify-between items-center">
@@ -209,96 +286,57 @@ function Calendario({
             </div>
 
             <form onSubmit={GuardarCambiosModal} className="p-6 space-y-4">
-              
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Paciente</label>
-                <input 
-                  type="text" 
-                  value={editPaciente} 
-                  onChange={(e) => setEditPaciente(e.target.value)}
-                  className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 font-medium"
-                  required
-                />
+                <input type="text" value={editPaciente} onChange={(e) => setEditPaciente(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 font-medium" required />
               </div>
-
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Hora de Inicio</label>
-                <input 
-                  type="time" 
-                  value={editHora} 
-                  onChange={(e) => setEditHora(e.target.value)}
-                  className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 font-medium"
-                  required
-                />
+                <input type="time" value={editHora} onChange={(e) => setEditHora(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 font-medium" required />
               </div>
-
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tratamiento</label>
-                <select 
-                  value={editTratamiento} 
-                  onChange={(e) => setEditTratamiento(e.target.value)}
-                  className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium"
-                >
+                <select value={editTratamiento} onChange={(e) => setEditTratamiento(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="revision">Revisión General (20 min)</option>
                   <option value="limpieza">Limpieza Dental (30 min)</option>
                   <option value="ortodoncia">Ajuste Ortodoncia (45 min)</option>
                   <option value="cirugia">Cirugía / Implante (2 horas)</option>
                 </select>
               </div>
-
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Especialista Principal</label>
-                <select 
-                  value={editPrincipal} 
-                  onChange={(e) => setEditPrincipal(e.target.value)}
-                  className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium"
-                >
+                <select value={editPrincipal} onChange={(e) => setEditPrincipal(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="">-- Selecciona --</option>
                   {personalList.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
-
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asistente</label>
-                <select 
-                  value={editAsistente} 
-                  onChange={(e) => setEditAsistente(e.target.value)}
-                  className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium"
-                >
+                <select value={editAsistente} onChange={(e) => setEditAsistente(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="Ninguno">Ninguno (Va sola)</option>
                   {personalList.filter(p => p !== editPrincipal).map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
 
-              {errorModal && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-700 p-2 rounded-lg text-xs font-medium">
-                  {errorModal}
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => handleEliminarCita(citaSeleccionada.id)}
-                  className="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-3 rounded-lg text-xs transition-colors"
-                >
-                  Eliminar Cita
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCitaSeleccionada(null)}
-                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2 px-3 rounded-lg text-xs transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-lg text-xs transition-colors"
-                >
-                  Aplicar Cambios
-                </button>
+              {/* 📝 OBSERVACIONES DENTRO DEL MODAL */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Observaciones de la Cita</label>
+                <textarea 
+                  value={editObservaciones} 
+                  onChange={(e) => setEditObservaciones(e.target.value)} 
+                  rows="2"
+                  placeholder="Sin anotaciones..."
+                  className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium resize-none focus:ring-2 focus:ring-blue-500" 
+                />
               </div>
 
+              {errorModal && <div className="bg-amber-50 border border-amber-200 text-amber-700 p-2 rounded-lg text-xs font-medium">{errorModal}</div>}
+              
+              <div className="grid grid-cols-3 gap-2 pt-2">
+                <button type="button" onClick={() => handleEliminarCita(citaSeleccionada.id)} className="bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-3 rounded-lg text-xs transition-colors">Eliminar Cita</button>
+                <button type="button" onClick={() => setCitaSeleccionada(null)} className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2 px-3 rounded-lg text-xs transition-colors">Cancelar</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-lg text-xs transition-colors">Aplicar Cambios</button>
+              </div>
             </form>
           </div>
         </div>
