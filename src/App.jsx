@@ -4,7 +4,8 @@ import { DURACION_TRATAMIENTOS, HORARIOS_SALIDA, COLORES_PERSONAL, PERSONAL_CLIN
 import Formulario from './components/Formulario';
 import Calendario from './components/Calendario';
 import Estadisticas from './components/Estadisticas';
-import GestionPersonal from './components/GestionPersonal'; // 👤 NUEVO COMPONENTE
+import GestionPersonal from './components/GestionPersonal'; 
+import Calculadora from './components/Calculadora'; // 🧮 Importamos el nuevo componente
 import { BarChart3, ArrowLeft, Users } from 'lucide-react';
 import { supabase } from './lib/supabase'; 
 
@@ -13,7 +14,7 @@ function App() {
 
   // Estados de datos
   const [citas, setCitas] = useState([]);
-  const [personalList, setPersonalList] = useState([]); // 👥 Listado dinámico de trabajadores
+  const [personalList, setPersonalList] = useState([]); 
   const [loading, setLoading] = useState(true);
 
   // Control de navegación: 'calendario', 'estadisticas' o 'personal'
@@ -47,8 +48,7 @@ function App() {
         }));
         setCitas(citasFormateadas);
 
-        // 👥 MAÑANA CONECTAMOS ESTO: Carga de Personal desde su tabla de Supabase
-        // Para que hoy funcione sin romper la app, cargamos un array vacío o el de pruebas por defecto
+        // Carga de Personal (Temporal local)
         setPersonalList([]); 
 
       } catch (err) {
@@ -62,31 +62,111 @@ function App() {
     cargarDatosIniciales();
   }, []);
 
-  // 👥 MANEJADORES PREPARADOS PARA LA TABLA PERSONAL (MAÑANA ENLAZAMOS CON .from('personal'))
+  // MANEJADORES DE LA TABLA PERSONAL
   const handleAddPersonal = async (nuevoTrabajador) => {
-    // Generador temporal local para que puedas probar la interfaz hoy mismo
     const localId = Math.floor(Math.random() * 100000);
     const empleadoConId = { ...nuevoTrabajador, id: localId };
     setPersonalList([...personalList, empleadoConId]);
-    
-    // El código de mañana será:
-    // const { data } = await supabase.from('personal').insert([nuevoTrabajador]).select();
   };
 
   const handleUpdatePersonal = async (id, datosActualizados) => {
     setPersonalList(personalList.map(emp => emp.id === id ? { ...emp, ...datosActualizados } : emp));
-    
-    // El código de mañana será:
-    // await supabase.from('personal').update(datosActualizados).eq('id', id);
   };
 
   const handleDelPersonal = async (id) => {
     setPersonalList(personalList.filter(emp => emp.id !== id));
-    
-    // El código de mañana será:
-    // await supabase.from('personal').delete().eq('id', id);
   };
 
+  // MANEJADORES DE CITAS (SUPABASE CONECTADO)
+  const handleActualizarCita = async (id, datosActualizados) => {
+    const citaOriginal = citas.find(c => c.id === id);
+    if (!citaOriginal) return;
+
+    const [fechaCita] = citaOriginal.start.split('T');
+    
+    const nuevoPrincipal = datosActualizados.principal || citaOriginal.extendedProps.principal;
+    const nuevoAsistente = datosActualizados.asistente || citaOriginal.extendedProps.asistente;
+    const nuevoTratamientoKey = datosActualizados.treatmentKey || citaOriginal.extendedProps.tratamientoKey;
+    const nuevoPaciente = datosActualizados.paciente !== undefined ? datosActualizados.paciente : citaOriginal.extendedProps.paciente;
+    const nuevasObservaciones = datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : citaOriginal.extendedProps.observaciones;
+    
+    let nuevoStart = datosActualizados.start || citaOriginal.start;
+    let nuevoEnd = datosActualizados.end;
+
+    if (datosActualizados.horaInicioManual) {
+      nuevoStart = `${fechaCita}T${datosActualizados.horaInicioManual}:00`;
+      const infoTratamiento = DURACION_TRATAMIENTOS[nuevoTratamientoKey];
+      const dummyInicio = new Date(nuevoStart);
+      const dummyFin = new Date(dummyInicio.getTime() + infoTratamiento.minutos * 60000);
+      nuevoEnd = `${fechaCita}T${String(dummyFin.getHours()).padStart(2, '0')}:${String(dummyFin.getMinutes()).padStart(2, '0')}:00`;
+    }
+
+    const equipo = [nuevoPrincipal];
+    if (nuevoAsistente !== 'Ninguno') equipo.push(nuevoAsistente);
+
+    const dummyFinObj = new Date(nuevoEnd);
+    const { backgroundColor, title } = calcularMetadatosCita(
+      nuevoPrincipal,
+      nuevoAsistente,
+      nuevoTratamientoKey,
+      dummyFinObj,
+      nuevoPaciente
+    );
+
+    const citaActualizadaEstructura = {
+      title,
+      start: nuevoStart,
+      end: nuevoEnd,
+      backgroundColor,
+      extendedProps: { 
+        personalInvolucrado: equipo, 
+        tratamientoKey: nuevoTratamientoKey, 
+        principal: nuevoPrincipal, 
+        asistente: nuevoAsistente,
+        paciente: nuevoPaciente,
+        observaciones: nuevasObservaciones
+      }
+    };
+
+    try {
+      const { data, error: updateError } = await supabase
+        .from('citas')
+        .update(citaActualizadaEstructura)
+        .eq('id', parseInt(id))
+        .select();
+
+      if (updateError) throw updateError;
+
+      setCitas(citas.map(cita => cita.id === id ? { ...data[0], id: String(data[0].id) } : cita));
+      setCitaSeleccionada(null);
+    } catch (err) {
+      console.error('Error al actualizar en Supabase:', err);
+      alert('No se pudieron guardar los cambios: ' + (err.message || ''));
+    }
+  };
+
+  const handleEliminarCita = async (id) => {
+    // 🛡️ Ventana de aviso para confirmar antes de eliminar
+    const seguro = window.confirm("⚠️ ¿Estás seguro de que deseas eliminar esta cita de forma permanente? Esta acción no se puede deshacer.");
+    if (!seguro) return;
+
+    try {
+      const { error: deleteError } = await supabase
+        .from('citas')
+        .delete()
+        .eq('id', parseInt(id));
+
+      if (deleteError) throw deleteError;
+
+      setCitas(citas.filter(cita => cita.id !== id));
+      setCitaSeleccionada(null);
+    } catch (err) {
+      console.error('Error al borrar en Supabase:', err);
+      alert('No se pudo eliminar la cita: ' + (err.message || ''));
+    }
+  };
+
+  // LOGICA DE VALIDACIONES DE DISPONIBILIDAD
   useEffect(() => {
     if (principal && principal === asistente) setAsistente('Ninguno');
   }, [principal]);
@@ -161,16 +241,18 @@ function App() {
     } catch (err) { setError('❌ Error en la nube al guardar la cita.'); }
   };
 
-  // Renderizado Condicional de Vistas
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4 hide-on-print">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">🩺 Gestor Clínico Pro</h1>
+          <h1 className="text-xl font-bold text-slate-800">🩺 Clínica Vecindario</h1>
           <p className="text-xs text-slate-500">Arquitectura modular y administración de clínica</p>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* 🧮 INCORPORAMOS EL COMPONENTE DE LA CALCULADORA AQUÍ */}
+          <Calculadora />
+
           {vistaActual === 'calendario' ? (
             <>
               <button
@@ -220,7 +302,8 @@ function App() {
                 comprobarDisponibilidad={(ini, fin, pers, idEx) => {
                   return comprobarDisponibilidad(ini.toISOString().split('T')[0], ini.toTimeString().slice(0, 5), fin.toTimeString().slice(0, 5), pers, idEx);
                 }}
-                handleActualizarCita={() => {}} handleEliminarCita={() => {}}
+                handleActualizarCita={handleActualizarCita} 
+                handleEliminarCita={handleEliminarCita}
                 citaSeleccionada={citaSeleccionada} setCitaSeleccionada={setCitaSeleccionada}
               />
             </div>
@@ -228,7 +311,6 @@ function App() {
         ) : vistaActual === 'estadisticas' ? (
           <Estadisticas citas={citas} personalList={PERSONAL_CLINICA} />
         ) : (
-          /* VISTA ASIGNADA AL NUEVO MÓDULO */
           <GestionPersonal 
             personal={personalList}
             onAdd={handleAddPersonal}
