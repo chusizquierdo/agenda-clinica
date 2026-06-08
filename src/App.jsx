@@ -1,26 +1,49 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { DURACION_TRATAMIENTOS, HORARIOS_SALIDA, COLORES_PERSONAL, PERSONAL_CLINICA } from './data/config';
+import { DURACION_TRATAMIENTOS } from './data/config'; 
 import Formulario from './components/Formulario';
 import Calendario from './components/Calendario';
 import Estadisticas from './components/Estadisticas';
 import GestionPersonal from './components/GestionPersonal'; 
-import Calculadora from './components/Calculadora'; // 🧮 Importamos el nuevo componente
+import Calculadora from './components/Calculadora'; 
 import { BarChart3, ArrowLeft, Users } from 'lucide-react';
-import { supabase } from './lib/supabase'; 
+import { apiCitas } from './services/api'; 
+
+// 🎨 CONFIGURACIÓN DE COLORES REALES DE TU PERSONAL
+const COLORES_PERSONAL = {
+  'Rut Barrero': '#3b82f6',     
+  'Miriam Quiñones': '#ef4444',  
+  'María': '#10b981',            
+  'Ninguno': '#64748b'
+};
+
+// ⏰ HORARIOS DE SALIDA REALES
+const HORARIOS_SALIDA = {
+  'Rut Barrero': '18:00',
+  'Miriam Quiñones': '18:00',
+  'María': '18:00',
+  'Ninguno': '23:59'
+};
+
+// 👥 🌟 ESTRUCTURA INTEGRAL REQUERIDA POR TU FORMULARIO Y CALENDARIO
+const PERSONAL_INICIAL_OBJ = [
+  { id: 1, nombre: 'Rut', apellidos: 'Barrero', rol: 'Especialista', color: '#3b82f6' },
+  { id: 2, nombre: 'Miriam', apellidos: 'Quiñones', rol: 'Especialista', color: '#ef4444' },
+  { id: 3, nombre: 'María', apellidos: '', rol: 'Asistente', color: '#10b981' } // María actúa de asistente
+];
 
 function App() {
   const fechaFijaPrueba = new Date().toISOString().split('T')[0]; 
 
-  // Estados de datos
+  // Estados de la aplicación
   const [citas, setCitas] = useState([]);
-  const [personalList, setPersonalList] = useState([]); 
+  const [personalList, setPersonalList] = useState(PERSONAL_INICIAL_OBJ); 
   const [loading, setLoading] = useState(true);
 
-  // Control de navegación: 'calendario', 'estadisticas' o 'personal'
+  // Control de navigation
   const [vistaActual, setVistaActual] = useState('calendario');
   
-  // Estados de los formularios de citas
+  // Estados de los formularios
   const [paciente, setPaciente] = useState('');
   const [fecha, setFecha] = useState(fechaFijaPrueba);
   const [hora, setHora] = useState('09:00'); 
@@ -32,27 +55,15 @@ function App() {
   const [advertencia, setAdvertencia] = useState('');
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
 
-  // 1. CARGAR DATOS DESDE SUPABASE AL ARRANCAR
+  // 1. CARGAR DATOS DESDE SUPABASE
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
         setLoading(true);
-        
-        // Carga de Citas
-        const { data: dataCitas, error: errorCitas } = await supabase.from('citas').select('*');
-        if (errorCitas) throw errorCitas;
-        
-        const citasFormateadas = (dataCitas || []).map(cita => ({
-          ...cita,
-          id: String(cita.id)
-        }));
+        const citasFormateadas = await apiCitas.getAll();
         setCitas(citasFormateadas);
-
-        // Carga de Personal (Temporal local)
-        setPersonalList([]); 
-
       } catch (err) {
-        console.error('Error al descargar datos de Supabase:', err);
+        console.error('Error al descargar datos de la API:', err);
         setError('❌ Error de conexión: No se pudieron sincronizar los datos.');
       } finally {
         setLoading(false);
@@ -77,7 +88,7 @@ function App() {
     setPersonalList(personalList.filter(emp => emp.id !== id));
   };
 
-  // MANEJADORES DE CITAS (SUPABASE CONECTADO)
+  // MANEJADORES DE CITAS (CONECTADO A LA API)
   const handleActualizarCita = async (id, datosActualizados) => {
     const citaOriginal = citas.find(c => c.id === id);
     if (!citaOriginal) return;
@@ -129,39 +140,25 @@ function App() {
     };
 
     try {
-      const { data, error: updateError } = await supabase
-        .from('citas')
-        .update(citaActualizadaEstructura)
-        .eq('id', parseInt(id))
-        .select();
-
-      if (updateError) throw updateError;
-
-      setCitas(citas.map(cita => cita.id === id ? { ...data[0], id: String(data[0].id) } : cita));
+      const registroActualizado = await apiCitas.update(id, citaActualizadaEstructura);
+      setCitas(citas.map(cita => cita.id === id ? { ...registroActualizado, id: String(registroActualizado.id) } : cita));
       setCitaSeleccionada(null);
     } catch (err) {
-      console.error('Error al actualizar en Supabase:', err);
+      console.error('Error al actualizar mediante API:', err);
       alert('No se pudieron guardar los cambios: ' + (err.message || ''));
     }
   };
 
   const handleEliminarCita = async (id) => {
-    // 🛡️ Ventana de aviso para confirmar antes de eliminar
     const seguro = window.confirm("⚠️ ¿Estás seguro de que deseas eliminar esta cita de forma permanente? Esta acción no se puede deshacer.");
     if (!seguro) return;
 
     try {
-      const { error: deleteError } = await supabase
-        .from('citas')
-        .delete()
-        .eq('id', parseInt(id));
-
-      if (deleteError) throw deleteError;
-
+      await apiCitas.delete(id);
       setCitas(citas.filter(cita => cita.id !== id));
       setCitaSeleccionada(null);
     } catch (err) {
-      console.error('Error al borrar en Supabase:', err);
+      console.error('Error al borrar mediante API:', err);
       alert('No se pudo eliminar la cita: ' + (err.message || ''));
     }
   };
@@ -178,10 +175,13 @@ function App() {
     const dummy = new Date(`${fecha}T${hora}:00`);
     const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
     const horaFinStr = finId.toTimeString().slice(0, 5);
-    const [hLimite, mLimite] = HORARIOS_SALIDA[principal].split(':').map(Number);
+    
+    const limiteSalida = HORARIOS_SALIDA[principal] || '18:00';
+    const [hLimite, mLimite] = limiteSalida.split(':').map(Number);
     const [hFin, mFin] = horaFinStr.split(':').map(Number);
+    
     if ((hFin * 60 + mFin) > (hLimite * 60 + mLimite)) {
-      setAdvertencia(`⚠️ ¡Atención! Termina a las ${horaFinStr}. Supera la salida de la ${principal} (${HORARIOS_SALIDA[principal]}h).`);
+      setAdvertencia(`⚠️ ¡Atención! Termina a las ${horaFinStr}. Supera la salida de la ${principal} (${limiteSalida}h).`);
     }
   }, [hora, tratamiento, principal, fecha]);
 
@@ -209,8 +209,11 @@ function App() {
   const calcularMetadatosCita = (pElegido, aElegido, tKey, finId, nomPaciente) => {
     const infoTratamiento = DURACION_TRATAMIENTOS[tKey];
     const hFinT = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
-    const [hLim, mLim] = HORARIOS_SALIDA[pElegido].split(':').map(Number);
+    
+    const limiteSalida = HORARIOS_SALIDA[pElegido] || '18:00';
+    const [hLim, mLim] = limiteSalida.split(':').map(Number);
     const [hFin, mFin] = hFinT.split(':').map(Number);
+    
     let backgroundColor = (hFin * 60 + mFin) > (hLim * 60 + mLim) ? '#ef4444' : (COLORES_PERSONAL[pElegido] || '#64748b');
     let title = (hFin * 60 + mFin) > (hLim * 60 + mLim) ? `⚠️ SOBREPASADO (${hFinT}) - 👤 ${nomPaciente}` : `👤 ${nomPaciente} - ${infoTratamiento.nombre}`;
     return { backgroundColor, title, pacienteLimpio: nomPaciente.trim() || "Paciente Anónimo" };
@@ -234,9 +237,8 @@ function App() {
       extendedProps: { personalInvolucrado: equipo, tratamientoKey: tratamiento, principal, asistente, paciente: pacienteLimpio, observaciones: observaciones.trim() }
     };
     try {
-      const { data, error: insError } = await supabase.from('citas').insert([nuevaCita]).select();
-      if (insError) throw insError;
-      setCitas([...citas, { ...data[0], id: String(data[0].id) }]);
+      const registroInsertado = await apiCitas.insert(nuevaCita);
+      setCitas([...citas, { ...registroInsertado, id: String(registroInsertado.id) }]);
       setPaciente(''); setObservaciones('');
     } catch (err) { setError('❌ Error en la nube al guardar la cita.'); }
   };
@@ -250,7 +252,6 @@ function App() {
         </div>
         
         <div className="flex gap-2 items-center">
-          {/* 🧮 INCORPORAMOS EL COMPONENTE DE LA CALCULADORA AQUÍ */}
           <Calculadora />
 
           {vistaActual === 'calendario' ? (
@@ -288,17 +289,19 @@ function App() {
         vistaActual === 'calendario' ? (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
             <div className="lg:col-span-1 hide-on-print">
+              {/* 🌟 ENLAZADO PERFECTO: Pasamos 'personalList' con la estructura interna exacta que el Formulario filtra */}
               <Formulario
                 fecha={fecha} setFecha={setFecha} hora={hora} setHora={setHora}
                 tratamiento={tratamiento} setTratamiento={setTratamiento} principal={principal} setPrincipal={setPrincipal}
                 asistente={asistente} setAsistente={setAsistente} paciente={paciente} setPaciente={setPaciente}
                 observaciones={observaciones} setObservaciones={setObservaciones} error={error} advertencia={advertencia}
-                handleCrearCita={handleCrearCita}
+                handleCrearCita={handleCrearCita} personalList={personalList} 
               />
             </div>
             <div className="lg:col-span-3">
+              {/* 🌟 FILTROS SIN UNDEFINED: Pasamos el mismo objeto para que renderice los nombres completos limpios */}
               <Calendario
-                citas={citas} fechaActual={fecha} personalList={PERSONAL_CLINICA}
+                citas={citas} fechaActual={fecha} personalList={personalList} 
                 comprobarDisponibilidad={(ini, fin, pers, idEx) => {
                   return comprobarDisponibilidad(ini.toISOString().split('T')[0], ini.toTimeString().slice(0, 5), fin.toTimeString().slice(0, 5), pers, idEx);
                 }}
@@ -309,7 +312,7 @@ function App() {
             </div>
           </div>
         ) : vistaActual === 'estadisticas' ? (
-          <Estadisticas citas={citas} personalList={PERSONAL_CLINICA} />
+          <Estadisticas citas={citas} personalList={personalList} />
         ) : (
           <GestionPersonal 
             personal={personalList}

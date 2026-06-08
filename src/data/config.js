@@ -1,24 +1,24 @@
 // src/data/config.js
 
 export const DURACION_TRATAMIENTOS = {
-  revision: { nombre: 'Revisión General', minutos: 20 },
-  limpieza: { nombre: 'Limpieza Dental', minutos: 30 },
-  ortodoncia: { nombre: 'Ajuste Ortodoncia', minutos: 45 },
-  cirugia: { nombre: 'Cirugía / Implante', minutos: 120 },
+  revision: { nombre: 'Revisión General', minutos: 30 },
+  limpieza: { nombre: 'Limpieza Bucal', minutos: 45 },
+  ortodoncia: { nombre: 'Ajuste Ortodoncia', minutos: 40 },
+  implante: { nombre: 'Cirugía de Implante', minutos: 120 },
+  endodoncia: { nombre: 'Endodoncia', minutos: 90 }
 };
 
-export const PERSONAL_CLINICA = ['Rut Barrero', 'Miriam Quiñones', 'María'];
-
-// Horarios límite de salida para el aviso visual de sobrepaso
-export const HORARIOS_SALIDA = {
-  'Rut Barrero': '15:00',
-  'Miriam Quiñones': '20:00',
-  'María': '18:00'
+// Dejamos esto como valores por defecto "de respaldo" por si la base de datos tarda en cargar
+export const COLORES_DEFECTO = {
+  'Dra. García': '#3b82f6',
+  'Dr. López': '#10b981',
+  'Dra. Martínez': '#f59e0b',
+  'Asistente Elena': '#ec4899'
 };
 
-// Colores identificativos por defecto para el personal (cuando no hay sobrepaso)
-export const COLORES_PERSONAL = {
-  'Rut Barrero': '#3b82f6', // Azul
-  'Miriam Quiñones': '#10b981', // Verde
-  'María': '#f59e0b'  // Naranja
+export const HORARIOS_DEFECTO = {
+  'Dra. García': '18:00',
+  'Dr. López': '17:30',
+  'Dra. Martínez': '20:00',
+  'Asistente Elena': '19:00'
 };

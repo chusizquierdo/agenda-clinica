@@ -25,7 +25,7 @@ function Calendario({
   const [editTratamiento, setEditTratamiento] = useState('revision');
   const [editPrincipal, setEditPrincipal] = useState('');
   const [editAsistente, setEditAsistente] = useState('Ninguno');
-  const [editObservaciones, setEditObservaciones] = useState(''); // 📝 Notas internas del modal
+  const [editObservaciones, setEditObservaciones] = useState(''); 
   const [errorModal, setErrorModal] = useState('');
 
   useEffect(() => {
@@ -38,7 +38,7 @@ function Calendario({
       setEditTratamiento(props.tratamientoKey || 'revision');
       setEditPrincipal(props.principal || '');
       setEditAsistente(props.asistente || 'Ninguno');
-      setEditObservaciones(props.observaciones || ''); // 📝 Cargamos observaciones guardadas
+      setEditObservaciones(props.observaciones || ''); 
       setErrorModal('');
     }
   }, [citaSeleccionada]);
@@ -109,7 +109,7 @@ function Calendario({
       principal: editPrincipal,
       asistente: editAsistente,
       paciente: editPaciente,
-      observaciones: editObservaciones.trim() // 📝 Pasamos la nota editada de vuelta
+      observaciones: editObservaciones.trim()
     });
   };
 
@@ -176,17 +176,20 @@ function Calendario({
           >
             👁️ Ver Todo
           </button>
-          {personalList.map(nombre => (
-            <button
-              key={nombre}
-              onClick={() => setFiltroEspecialista(nombre)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filtroEspecialista === nombre ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              👤 {nombre}
-            </button>
-          ))}
+          {personalList.map(p => {
+            const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+            return (
+              <button
+                key={p.id}
+                onClick={() => setFiltroEspecialista(nombreCompleto)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  filtroEspecialista === nombreCompleto ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                👤 {nombreCompleto}
+              </button>
+            );
+          })}
         </div>
 
         <button
@@ -224,9 +227,9 @@ function Calendario({
         />
       </div>
 
-      {/* 📜 VISTA IMPRESA CON LA NUEVA COLUMNA DE OBSERVACIONES */}
+      {/* 📜 VISTA IMPRESA (Corregida estrictamente sin espacios en los tags TR) */}
       <div id="print-sheet">
-        <div style={{ display: 'flex', justifyContent: 'between', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '10px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '10px' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: '20px' }}>📋 HOJA DE TRABAJO DIARIA</h1>
             <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#475569' }}>Fecha de la Agenda: <strong>{fechaActual}</strong></p>
@@ -249,7 +252,7 @@ function Calendario({
                 <th style={{ width: '18%' }}>Tratamiento</th>
                 <th style={{ width: '12%' }}>Principal</th>
                 <th style={{ width: '12%' }}>Asistente</th>
-                <th style={{ width: '23%' }}>Observaciones</th> {/* 👈 NUEVA COLUMNA */}
+                <th style={{ width: '23%' }}>Observaciones</th>
               </tr>
             </thead>
             <tbody>
@@ -265,7 +268,6 @@ function Calendario({
                     <td>{infoT ? infoT.nombre : 'Revisión'}</td>
                     <td>{cita.extendedProps.principal}</td>
                     <td>{cita.extendedProps.asistente === 'Ninguno' ? '-' : cita.extendedProps.asistente}</td>
-                    {/* Imprime las anotaciones o una celda vacía elegante */}
                     <td><span style={{ fontSize: '11px', fontStyle: 'italic' }}>{cita.extendedProps.observaciones || '-'}</span></td>
                   </tr>
                 );
@@ -275,7 +277,7 @@ function Calendario({
         )}
       </div>
 
-      {/* MODAL DE EDICIÓN FLOTANTE */}
+      {/* MODAL DE EDICIÓN FLOTANTE (Tu diseño original exacto) */}
       {citaSeleccionada && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 hide-on-print">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full border border-slate-300 overflow-hidden">
@@ -307,18 +309,23 @@ function Calendario({
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Especialista Principal</label>
                 <select value={editPrincipal} onChange={(e) => setEditPrincipal(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="">-- Selecciona --</option>
-                  {personalList.map(p => <option key={p} value={p}>{p}</option>)}
+                  {personalList.map(p => {
+                    const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+                    return <option key={p.id} value={nombreCompleto}>{nombreCompleto}</option>;
+                  })}
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asistente</label>
                 <select value={editAsistente} onChange={(e) => setEditAsistente(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="Ninguno">Ninguno (Va sola)</option>
-                  {personalList.filter(p => p !== editPrincipal).map(p => <option key={p} value={p}>{p}</option>)}
+                  {personalList.map(p => {
+                    const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+                    return <option key={p.id} value={nombreCompleto} disabled={nombreCompleto === editPrincipal}>{nombreCompleto}</option>;
+                  })}
                 </select>
               </div>
 
-              {/* 📝 OBSERVACIONES DENTRO DEL MODAL */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Observaciones de la Cita</label>
                 <textarea 
