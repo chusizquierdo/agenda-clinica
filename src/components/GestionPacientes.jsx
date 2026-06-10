@@ -1,8 +1,18 @@
 // src/components/GestionPacientes.jsx
-import React, { useState } from 'react';
-import { UserPlus, Search, FileText, Trash2, ShieldAlert, CheckCircle2, XCircle, Edit3, Save } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { UserPlus, Search, FileText, Trash2, ShieldAlert, CheckCircle2, XCircle, Edit3, Save, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { apiPacientes } from '../services/api'; 
 
-function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onDeletePaciente }) {
+function GestionPacientes({ pacientes: pacientesIniciales, onAddPaciente, onUpdatePaciente, onDeletePaciente }) {
+  // Lista de pacientes a renderizar dinámicamente
+  const [listaPacientes, setListaPacientes] = useState([]);
+  const [buscandoDB, setBuscandoDB] = useState(false);
+
+  // Estados para el control de la paginación (15 por página)
+  const [pagina, setPagina] = useState(1);
+  const LIMITE_POR_PAGINA = 15;
+  const [hayMasPacientes, setHayMasPacientes] = useState(true);
+
   // Estados para el formulario de alta
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
@@ -10,10 +20,10 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
   const [dni, setDni] = useState('');
   const [notas, setNotas] = useState('');
 
-  // Filtro de búsqueda local
+  // Input de búsqueda
   const [buscar, setBuscar] = useState('');
 
-  // Estado para la Ficha Modal flotante y su modo edición
+  // Estado para la Ficha Modal flotante y modo edición
   const [pacienteSeleccionado, setPacienteSeleccionado] = useState(null);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [editNombre, setEditNombre] = useState('');
@@ -22,15 +32,66 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
   const [editDni, setEditDni] = useState('');
   const [editNotas, setEditNotas] = useState('');
 
-  // 🌟 Estado para Alertas Visuales Internas (Texto verde/rojo de confirmación)
+  // Alertas Visuales Temporales (Texto verde/rojo)
   const [notificacion, setNotificacion] = useState({ mostrar: false, tipo: '', mensaje: '' });
 
   const lanzarNotificacion = (tipo, mensaje) => {
     setNotificacion({ mostrar: true, tipo, mensaje });
     setTimeout(() => {
       setNotificacion({ mostrar: false, tipo: '', mensaje: '' });
-    }, 4000); // Se oculta solo a los 4 segundos
+    }, 4000);
   };
+
+  // Función encargada de descargar una página concreta
+  const cargarPacientesPaginados = async (numPagina) => {
+    try {
+      setBuscandoDB(true);
+      const nuevosPacientes = await apiPacientes.getPorPagina(numPagina, LIMITE_POR_PAGINA);
+      setListaPacientes(nuevosPacientes);
+      
+      // Si nos devuelve menos filas que el límite, significa que ya hemos llegado al final de la BD
+      if (nuevosPacientes.length < LIMITE_POR_PAGINA) {
+        setHayMasPacientes(false);
+      } else {
+        setHayMasPacientes(true);
+      }
+    } catch (err) {
+      lanzarNotificacion('error', 'Error al sincronizar pacientes de la base de datos.');
+    } finally {
+      setBuscandoDB(false);
+    }
+  };
+
+  // Escucha el cambio de página (solo cuando no se está buscando activamente)
+  useEffect(() => {
+    if (!buscar.trim()) {
+      cargarPacientesPaginados(pagina);
+    }
+  }, [pagina, pacientesIniciales]); 
+
+  // 🚀 EFECTO DEBUNCE: Busca de forma nativa cuando el usuario deja de teclear
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (buscar.trim()) {
+        try {
+          setBuscandoDB(true);
+          const resultados = await apiPacientes.search(buscar);
+          setListaPacientes(resultados);
+          setHayMasPacientes(false); // Desactivamos avanzar página durante una búsqueda manual
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setBuscandoDB(false);
+        }
+      } else {
+        // Si borra el buscador, regresamos a la página donde estábamos
+        setPagina(1);
+        cargarPacientesPaginados(1);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [buscar]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,6 +111,9 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
       
       lanzarNotificacion('exito', '✅ ¡Paciente registrado correctamente en la base de datos!');
       setNombre(''); setApellido(''); setTelefono(''); setDni(''); setNotas('');
+      
+      // Recargar la página actual para que se aplique el orden alfabético correcto automáticamente
+      cargarPacientesPaginados(pagina);
     } catch (err) {
       lanzarNotificacion('error', '❌ Error de sincronización: No se pudo registrar al paciente.');
     }
@@ -62,6 +126,7 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
     try {
       await onDeletePaciente(id);
       lanzarNotificacion('exito', '🗑️ El expediente del paciente ha sido eliminado correctamente.');
+      setListaPacientes(listaPacientes.filter(p => p.id !== id));
       if (pacienteSeleccionado?.id === id) setPacienteSeleccionado(null);
     } catch (err) {
       lanzarNotificacion('error', '❌ Error: No se pudo eliminar el registro de Supabase.');
@@ -82,38 +147,37 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
     const seguro = window.confirm("¿Deseas guardar los cambios modificados en esta ficha clínica?");
     if (!seguro) return;
 
-    try {
-      await onUpdatePaciente(pacienteSeleccionado.id, {
-        nombre: editNombre.trim(),
-        apellido: editApellido.trim(),
-        telefono: editTelefono.trim(),
-        dni: editDni.trim().toUpperCase(),
-        notas: editNotas.trim()
-      });
+    const datosActualizados = {
+      nombre: editNombre.trim(),
+      apellido: editApellido.trim(),
+      telefono: editTelefono.trim(),
+      dni: editDni.trim().toUpperCase(),
+      notas: editNotas.trim()
+    };
 
+    try {
+      const actualizado = await onUpdatePaciente(pacienteSeleccionado.id, datosActualizados);
       lanzarNotificacion('exito', '💾 ¡Ficha clínica editada y guardada correctamente!');
+      
+      if (actualizado) {
+        setListaPacientes(listaPacientes.map(p => p.id === pacienteSeleccionado.id ? actualizado : p));
+      }
       setPacienteSeleccionado(null);
       setModoEdicion(false);
+      // Forzar reordenación alfabética tras editar el nombre
+      cargarPacientesPaginados(pagina);
     } catch (err) {
       lanzarNotificacion('error', '❌ Error: No se pudieron actualizar los datos del paciente.');
     }
   };
 
-  const pacientesFiltrados = pacientes.filter(p => {
-    const termino = buscar.toLowerCase();
-    const nomCompleto = `${p.nombre} ${p.apellido || ''}`.toLowerCase();
-    return nomCompleto.includes(termino) || p.telefono.includes(termino) || (p.dni && p.dni.toLowerCase().includes(termino));
-  });
-
   return (
     <div className="space-y-4">
       
-      {/* BANNER DE NOTIFICACIONES (Texto dinámico no invasivo) */}
+      {/* BANNER DE NOTIFICACIONES */}
       {notificacion.mostrar && (
         <div className={`p-3 rounded-xl border flex items-center gap-2 text-xs font-bold shadow-sm transition-all animate-fadeIn ${
-          notificacion.tipo === 'exito' 
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
-            : 'bg-red-50 border-red-200 text-red-800'
+          notificacion.tipo === 'exito' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
         }`}>
           {notificacion.tipo === 'exito' ? <CheckCircle2 size={16} className="text-emerald-600" /> : <XCircle size={16} className="text-red-600" />}
           {notificacion.mensaje}
@@ -186,30 +250,33 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
           </form>
         </div>
 
-        {/* COLUMNA 2 Y 3: LISTADO Y BUSCADOR */}
+        {/* COLUMNA 2 Y 3: LISTADO CON COLUMNA NUMÉRICA Y ORDEN ALFABÉTICO */}
         <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-100 pb-2">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
-              Base de Datos de Pacientes ({pacientes.length})
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+              Pacientes {buscandoDB && <Loader2 size={14} className="animate-spin text-blue-500" />}
             </h2>
             
             <div className="relative max-w-xs w-full">
               <Search className="absolute left-2.5 top-2.5 text-slate-400" size={14} />
               <input
                 type="text" value={buscar} onChange={(e) => setBuscar(e.target.value)}
-                placeholder="Buscar por nombre, tel o DNI..."
-                className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg focus:outline-none"
+                placeholder="Buscar (nombre, tel, DNI)..."
+                className="w-full pl-8 pr-2 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            {pacientesFiltrados.length === 0 ? (
-              <p className="text-xs text-slate-400 italic text-center py-8">No se encontraron registros de pacientes.</p>
+            {listaPacientes.length === 0 ? (
+              <p className="text-xs text-slate-400 italic text-center py-8">
+                {buscandoDB ? 'Buscando en Supabase...' : 'No se encontraron registros coincidentes.'}
+              </p>
             ) : (
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold border-b border-slate-200">
+                    <th className="p-3 text-center w-12">#</th>
                     <th className="p-3">Paciente</th>
                     <th className="p-3">Teléfono</th>
                     <th className="p-3">DNI / NIE</th>
@@ -217,38 +284,73 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                  {pacientesFiltrados.map(p => (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3 font-semibold text-slate-800">
-                        {p.nombre} {p.apellido}
-                        {p.notas && (p.notas.toLowerCase().includes('alerg') || p.notas.toLowerCase().includes('⚠️') || p.notas.toLowerCase().includes('importante')) && (
-                          <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-800 font-bold rounded text-[9px] uppercase animate-pulse">
-                            <ShieldAlert size={10} /> Alerta
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 font-mono">{p.telefono}</td>
-                      <td className="p-3 font-mono">{p.dni || '-'}</td>
-                      <td className="p-3 flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => abrirFicha(p)}
-                          className="bg-blue-50 text-blue-600 hover:bg-blue-100 p-1.5 rounded-lg transition-colors flex items-center gap-1 font-bold text-[11px]"
-                        >
-                          <FileText size={14} /> Ficha
-                        </button>
-                        <button
-                          onClick={() => handleEliminar(p.id, `${p.nombre} ${p.apellido || ''}`)}
-                          className="bg-red-50 text-red-500 hover:bg-red-100 p-1.5 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {listaPacientes.map((p, index) => {
+                    // Cálculo dinámico de la posición en base a la página actual
+                    const numeroPosicion = (pagina - 1) * LIMITE_POR_PAGINA + (index + 1);
+                    
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3 font-mono text-center text-slate-400 font-bold bg-slate-50/30">
+                          {numeroPosicion}
+                        </td>
+                        <td className="p-3 font-semibold text-slate-800">
+                          {p.nombre} {p.apellido}
+                          {p.notas && (p.notas.toLowerCase().includes('alerg') || p.notas.toLowerCase().includes('⚠️') || p.notas.toLowerCase().includes('importante')) && (
+                            <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-800 font-bold rounded text-[9px] uppercase animate-pulse">
+                              <ShieldAlert size={10} /> Alerta
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono">{p.telefono}</td>
+                        <td className="p-3 font-mono">{p.dni || '-'}</td>
+                        <td className="p-3 flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => abrirFicha(p)}
+                            className="bg-blue-50 text-blue-600 hover:bg-blue-100 p-1.5 rounded-lg transition-colors flex items-center gap-1 font-bold text-[11px]"
+                          >
+                            <FileText size={14} /> Ficha
+                          </button>
+                          <button
+                            onClick={() => handleEliminar(p.id, `${p.nombre} ${p.apellido || ''}`)}
+                            className="bg-red-50 text-red-500 hover:bg-red-100 p-1.5 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </div>
+
+          {/* BOTONES DE PAGINACIÓN CLÍNICOS (Ocultos si se está buscando) */}
+          {!buscar.trim() && (
+            <div className="flex justify-between items-center border-t border-slate-100 pt-4 text-xs">
+              <span className="text-slate-500 font-medium">
+                Página <strong className="text-slate-800">{pagina}</strong>
+              </span>
+              
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPagina(prev => Math.max(prev - 1, 1))}
+                  disabled={pagina === 1 || buscandoDB}
+                  className="p-2 border rounded-xl hover:bg-slate-50 font-bold flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-transparent text-slate-700 transition-all"
+                >
+                  <ChevronLeft size={14} /> Anterior
+                </button>
+                <button
+                  onClick={() => setPagina(prev => prev + 1)}
+                  disabled={!hayMasPacientes || buscandoDB}
+                  className="p-2 border rounded-xl hover:bg-slate-50 font-bold flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-transparent text-slate-700 transition-all"
+                >
+                  Siguiente <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -269,7 +371,6 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
 
             <div className="p-6 space-y-4">
               {modoEdicion ? (
-                // Vista del formulario de edición dentro de la modal
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -297,7 +398,6 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
                   </div>
                 </div>
               ) : (
-                // Vista de lectura normal de la modal
                 <>
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                     <p className="text-[10px] uppercase font-bold text-slate-400">Nombre Completo</p>
@@ -328,7 +428,6 @@ function GestionPacientes({ pacientes = [], onAddPaciente, onUpdatePaciente, onD
                 </>
               )}
 
-              {/* BOTONES DE ACCIÓN DE LA MODAL */}
               <div className="flex gap-2 pt-2">
                 {modoEdicion ? (
                   <>

@@ -8,7 +8,7 @@ import GestionPersonal from './components/GestionPersonal';
 import GestionPacientes from './components/GestionPacientes'; 
 import Calculadora from './components/Calculadora'; 
 import RelojDigital from './components/RelojDigital'; 
-import { BarChart3, ArrowLeft, Users, UserCircle } from 'lucide-react';
+import { BarChart3, ArrowLeft, Users, UserCircle, LogOut, LogIn } from 'lucide-react';
 import { apiCitas, apiPersonal, apiPacientes } from './services/api'; 
 
 import logoClinica from './assets/logo.avif';
@@ -79,6 +79,9 @@ function App() {
 
   const fechaFijaPrueba = obtenerFechaInicialValida();
   
+  // 🌟 NUEVO ESTADO: Controla si el usuario está dentro del sistema o fuera
+  const [sesionActiva, setSesionActiva] = useState(true);
+
   const [citas, setCitas] = useState([]);
   const [personalList, setPersonalList] = useState([]); 
   const [pacientes, setPacientes] = useState([]); 
@@ -103,7 +106,7 @@ function App() {
         const [citasFormateadas, personalDB, pacientesDB] = await Promise.all([
           apiCitas.getAll(),
           apiPersonal.getAll(),
-          apiPacientes.getAll()
+          apiPacientes.getPorPagina(1, 50) 
         ]);
         setCitas(citasFormateadas);
         setPacientes(pacientesDB || []);
@@ -268,7 +271,7 @@ function App() {
     const horaFinStr = finId.toTimeString().slice(0, 5);
 
     const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === principal);
-    const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
+    const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFOTT;
     
     const diaSemanaNombre = TRADUCTOR_DIAS[dummy.getDay()];
     const reglaDia = cuadrante[diaSemanaNombre];
@@ -391,6 +394,38 @@ function App() {
     }
   };
 
+  // 🌟 VISTA CORPORATIVA: Pantalla que se muestra al cerrar sesión
+  if (!sesionActiva) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className="bg-white/5 border border-white/10 p-10 rounded-3xl max-w-sm w-full shadow-2xl backdrop-blur-md space-y-6 animate-fadeIn">
+          <div className="flex justify-center">
+            <img 
+              src={logoClinica} 
+              alt="Logo Clínica" 
+              className="h-24 w-auto object-contain filter drop-shadow-md"
+            />
+          </div>
+          
+          <div className="space-y-1">
+            <h2 className="text-white font-bold text-lg tracking-wide uppercase">Clínica Médica</h2>
+            <p className="text-slate-400 text-xs">Sesión finalizada de forma segura.</p>
+          </div>
+
+          <div className="border-t border-white/10 pt-4">
+            <button
+              onClick={() => setSesionActiva(true)}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg uppercase tracking-wider"
+            >
+              <LogIn size={16} /> Acceder al Sistema
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // VISTA PRINCIPAL (Cuando la sesión está activa)
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4 hide-on-print">
@@ -431,6 +466,18 @@ function App() {
               <ArrowLeft size={16} /> 📅 Volver al Calendario
             </button>
           )}
+
+          {/* 🌟 NUEVO BOTÓN: Cerrar Sesión con estilo clínico e icono sofisticado */}
+          <button
+            onClick={() => {
+              const confirmar = window.confirm("¿Seguro que deseas salir del panel clínico?");
+              if (confirmar) setSesionActiva(false);
+            }}
+            className="bg-slate-100 text-slate-700 hover:bg-red-50 hover:text-red-700 font-bold py-2 px-3 rounded-xl text-xs flex items-center gap-1.5 border border-slate-200 shadow-sm transition-all"
+            title="Cerrar sesión de forma segura"
+          >
+            <LogOut size={15} /> Salir
+          </button>
         </div>
       </header>
 

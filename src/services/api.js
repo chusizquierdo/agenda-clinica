@@ -78,13 +78,34 @@ export const apiPersonal = {
   }
 };
 
-// CONEXIÓN CON TU TABLA DE PACIENTES (COLUMNAS: apellido, notas)
+// SECCIÓN DE PACIENTES TOTALMENTE OPTIMIZADA, PAGINADA Y ORDENADA POR NOMBRE
 export const apiPacientes = {
-  async getAll() {
+  // Trae los pacientes de 15 en 15 ordenados alfabéticamente por nombre
+  async getPorPagina(pagina = 1, limite = 15) {
+    const desde = (pagina - 1) * limite;
+    const hasta = desde + limite - 1;
+
     const { data, error } = await supabase
       .from('pacientes')
       .select('*')
-      .order('nombre', { ascending: true });
+      .order('nombre', { ascending: true })
+      .range(desde, hasta);
+      
+    if (error) throw error;
+    return data;
+  },
+  // Búsqueda nativa ultrarrápida (también ordenada alfabéticamente)
+  async search(termino) {
+    if (!termino.trim()) return this.getPorPagina(1, 15);
+    
+    const queryTerm = `%${termino.trim()}%`;
+    const { data, error } = await supabase
+      .from('pacientes')
+      .select('*')
+      .or(`nombre.ilike.${queryTerm},apellido.ilike.${queryTerm},dni.ilike.${queryTerm},telefono.ilike.${queryTerm}`)
+      .order('nombre', { ascending: true })
+      .limit(15); 
+      
     if (error) throw error;
     return data;
   },
