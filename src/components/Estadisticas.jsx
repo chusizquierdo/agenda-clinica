@@ -1,15 +1,25 @@
 // src/components/Estadisticas.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DURACION_TRATAMIENTOS } from '../data/config';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { CalendarDays, Clock, Users, Activity } from 'lucide-react';
 
-function Estadisticas({ citas, personalList }) {
+function Estadisticas({ citas = [], personalList = [] }) {
+  // 🚀 Truco de Renderizado: Evita que Recharts calcule dimensiones físicas antes de que el DOM esté pintado
+  const [renderizarGraficas, setRenderizarGraficas] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setRenderizarGraficas(true);
+    }, 100); // 100ms es suficiente para que las cajas grid de Tailwind ya tengan tamaño real en el navegador
+    return () => clearTimeout(timer);
+  }, []);
+
   // Filtro interno para seleccionar el mes ("YYYY-MM")
   const [mesFiltro, setMesFiltro] = useState(new Date().toISOString().slice(0, 7));
 
   // 1. Filtrar las citas correspondientes al mes seleccionado
-  const citasDelMes = citas.filter(cita => cita.start.startsWith(mesFiltro));
+  const citasDelMes = citas.filter(cita => cita.start?.startsWith(mesFiltro));
 
   // 2. 🧠 PROCESAMIENTO AVANZADO: Contabilizar roles de Principal y Asistente (Adaptado a Array de Objetos)
   const datosEspecialistas = personalList.map(p => {
@@ -17,19 +27,19 @@ function Estadisticas({ citas, personalList }) {
     const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
 
     // Filtrar cuando es el encargado principal
-    const comoPrincipal = citasDelMes.filter(c => c.extendedProps.principal === nombreCompleto);
+    const comoPrincipal = citasDelMes.filter(c => c.extendedProps?.principal === nombreCompleto);
     // Filtrar cuando acude en calidad de asistente/auxiliar
-    const comoAsistente = citasDelMes.filter(c => c.extendedProps.asistente === nombreCompleto);
+    const comoAsistente = citasDelMes.filter(c => c.extendedProps?.asistente === nombreCompleto);
     
     // Calcular minutos acumulados como Principal
     const minutosPrincipal = comoPrincipal.reduce((acc, c) => {
-      const tipo = c.extendedProps.tratamientoKey;
+      const tipo = c.extendedProps?.tratamientoKey;
       return acc + (DURACION_TRATAMIENTOS[tipo]?.minutos || 0);
     }, 0);
 
     // Calcular minutos acumulados como Asistente
     const minutosAsistente = comoAsistente.reduce((acc, c) => {
-      const tipo = c.extendedProps.tratamientoKey;
+      const tipo = c.extendedProps?.tratamientoKey;
       return acc + (DURACION_TRATAMIENTOS[tipo]?.minutos || 0);
     }, 0);
 
@@ -47,10 +57,10 @@ function Estadisticas({ citas, personalList }) {
     };
   });
 
-  // 3. Procesar datos: Distribución de tipos de tratamientos (Se mantiene igual)
+  // 3. Procesar datos: Distribución de tipos de tratamientos
   const contadorTratamientos = {};
   citasDelMes.forEach(c => {
-    const key = c.extendedProps.tratamientoKey;
+    const key = c.extendedProps?.tratamientoKey;
     const nombreLegible = DURACION_TRATAMIENTOS[key]?.nombre || 'Revisión';
     contadorTratamientos[nombreLegible] = (contadorTratamientos[nombreLegible] || 0) + 1;
   });
@@ -117,38 +127,50 @@ function Estadisticas({ citas, personalList }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Gráfico 1: Pacientes por Especialista (Apilado) */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">🏆 Volumen de Citas por Especialista</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={datosEspecialistas} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 500 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Citas como Principal" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Citas como Asistente" stackId="a" fill="#93c5fd" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="relative w-full min-h-[288px] flex-1">
+            {renderizarGraficas && totalCitasContadas > 0 ? (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={288}>
+                <BarChart data={datosEspecialistas} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 500 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Citas como Principal" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Citas como Asistente" stackId="a" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-72 flex items-center justify-center text-xs text-slate-400 italic">
+                {totalCitasContadas === 0 ? "No hay citas registradas en este mes" : "Preparando gráfico..."}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Gráfico 2: Horas en Gabinete (Apilado) */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">⏱️ Tiempo Real Dedicado a la Clínica</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={datosEspecialistas} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 500 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip unit=" horas" />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Horas como Principal" stackId="b" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="Horas como Asistente" stackId="b" fill="#6ee7b7" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="relative w-full min-h-[288px] flex-1">
+            {renderizarGraficas && totalCitasContadas > 0 ? (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={288}>
+                <BarChart data={datosEspecialistas} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 500 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip unit=" horas" />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Horas como Principal" stackId="b" fill="#10b981" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Horas como Asistente" stackId="b" fill="#6ee7b7" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-72 flex items-center justify-center text-xs text-slate-400 italic">
+                {totalCitasContadas === 0 ? "No hay horas registradas en este mes" : "Preparando gráfico..."}
+              </div>
+            )}
           </div>
         </div>
 
@@ -160,17 +182,21 @@ function Estadisticas({ citas, personalList }) {
               <p className="text-xs font-medium text-slate-400 italic py-12">No hay citas registradas en este mes para extraer porcentajes.</p>
             ) : (
               <>
-                <div className="h-60 w-60">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={datosTratamientos} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
-                        {datosTratamientos.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORES_TARTA[index % COLORES_TARTA.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="relative h-60 w-60">
+                  {renderizarGraficas ? (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+                      <PieChart>
+                        <Pie data={datosTratamientos} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={4} dataKey="value">
+                          {datosTratamientos.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORES_TARTA[index % COLORES_TARTA.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-xs text-slate-400 italic">Cargando...</div>
+                  )}
                 </div>
 
                 <div className="flex-1 space-y-2 max-w-sm w-full">

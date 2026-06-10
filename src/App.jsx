@@ -5,10 +5,11 @@ import Formulario from './components/Formulario';
 import Calendario from './components/Calendario';
 import Estadisticas from './components/Estadisticas';
 import GestionPersonal from './components/GestionPersonal'; 
+import GestionPacientes from './components/GestionPacientes'; 
 import Calculadora from './components/Calculadora'; 
 import RelojDigital from './components/RelojDigital'; 
-import { BarChart3, ArrowLeft, Users } from 'lucide-react';
-import { apiCitas, apiPersonal } from './services/api'; 
+import { BarChart3, ArrowLeft, Users, UserCircle } from 'lucide-react';
+import { apiCitas, apiPersonal, apiPacientes } from './services/api'; 
 
 import logoClinica from './assets/logo.avif';
 
@@ -68,14 +69,11 @@ const HORARIO_POR_DEFECTO = {
 const TRADUCTOR_DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
 
 function App() {
-  const hoy = new Date();
-  
-  // Si hoy es fin de semana, calculamos por defecto la fecha del próximo lunes para una mejor experiencia de usuario
   const obtenerFechaInicialValida = () => {
     const d = new Date();
     const dia = d.getDay();
-    if (dia === 6) d.setDate(d.getDate() + 2); // Sábado -> salta a Lunes
-    if (dia === 0) d.setDate(d.getDate() + 1); // Domingo -> salta a Lunes
+    if (dia === 6) d.setDate(d.getDate() + 2); 
+    if (dia === 0) d.setDate(d.getDate() + 1); 
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
@@ -83,6 +81,7 @@ function App() {
   
   const [citas, setCitas] = useState([]);
   const [personalList, setPersonalList] = useState([]); 
+  const [pacientes, setPacientes] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [vistaActual, setVistaActual] = useState('calendario');
   
@@ -101,11 +100,13 @@ function App() {
     const cargarDatosIniciales = async () => {
       try {
         setLoading(true);
-        const [citasFormateadas, personalDB] = await Promise.all([
+        const [citasFormateadas, personalDB, pacientesDB] = await Promise.all([
           apiCitas.getAll(),
-          apiPersonal.getAll()
+          apiPersonal.getAll(),
+          apiPacientes.getAll()
         ]);
         setCitas(citasFormateadas);
+        setPacientes(pacientesDB || []);
 
         if (personalDB && personalDB.length > 0) {
           const plantillaInyectada = personalDB.map(emp => {
@@ -131,6 +132,26 @@ function App() {
     cargarDatosIniciales();
   }, []);
 
+  // Handlers para pacientes
+  const handleAddPaciente = async (nuevoPac) => {
+    const registroInsertado = await apiPacientes.insert(nuevoPac);
+    setPacientes([...pacientes, registroInsertado]);
+    return registroInsertado;
+  };
+
+  const handleUpdatePaciente = async (id, datosActualizados) => {
+    const registroActualizado = await apiPacientes.update(id, datosActualizados);
+    setPacientes(pacientes.map(p => p.id === id ? registroActualizado : p));
+    return registroActualizado;
+  };
+
+  const handleDelPaciente = async (id) => {
+    await apiPacientes.delete(id);
+    setPacientes(pacientes.filter(p => p.id !== id));
+    return true;
+  };
+
+  // Handlers para personal
   const handleAddPersonal = async (nuevoTrabajador) => {
     try {
       const registroInsertado = await apiPersonal.insert(nuevoTrabajador);
@@ -146,8 +167,8 @@ function App() {
       setPersonalList(personalList.map(emp => emp.id === id ? registroActualizado : emp));
       
       const actual = personalList.find(e => e.id === id);
-      if (actual && principal === `${actual.nombre} ${actual.apellidos}`.trim()) {
-        setPrincipal(`${datosActualizados.nombre} ${datosActualizados.apellidos}`.trim());
+      if (actual && principal === `${actual.nombre} ${actual.apellidos || ''}`.trim()) {
+        setPrincipal(`${datosActualizados.nombre} ${datosActualizados.apellidos || ''}`.trim());
       }
     } catch (err) {
       alert('❌ Error al actualizar los datos en Supabase.');
@@ -246,7 +267,7 @@ function App() {
     const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
     const horaFinStr = finId.toTimeString().slice(0, 5);
 
-    const empData = personalList.find(p => `${p.nombre} ${p.apellidos}`.trim() === principal);
+    const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === principal);
     const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
     
     const diaSemanaNombre = TRADUCTOR_DIAS[dummy.getDay()];
@@ -273,7 +294,7 @@ function App() {
   }, [hora, tratamiento, principal, fecha, personalList]);
 
   const compruebaTurnoEmpleado = (nombreCompleto, fechaStr, hIniStr, hFinStr) => {
-    const empData = personalList.find(p => `${p.nombre} ${p.apellidos}`.trim() === nombreCompleto);
+    const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === nombreCompleto);
     if (!empData) return true; 
 
     const cuadrante = empData.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
@@ -321,7 +342,7 @@ function App() {
     const infoTratamiento = DURACION_TRATAMIENTOS[tKey];
     const hFinT = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
     const turnoCorrecto = compruebaTurnoEmpleado(pElegido, fechaStr, hIniStr, hFinT);
-    const empData = personalList.find(p => `${p.nombre} ${p.apellidos}`.trim() === pElegido);
+    const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === pElegido);
     const colorPorDefecto = empData?.color || '#64748b';
 
     let backgroundColor = !turnoCorrecto ? '#ef4444' : colorPorDefecto;
@@ -374,28 +395,27 @@ function App() {
     <div className="min-h-screen bg-slate-50 p-6">
       <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4 hide-on-print">
         <div className="flex items-center gap-3">
-          <img 
-            src={logoClinica} 
-            alt="Logo Clínica Vecindario" 
-            className="h-12 w-auto object-contain select-none"
-          />
+          <img src={logoClinica} alt="Logo" className="h-12 w-auto object-contain select-none" />
           <RelojDigital />
         </div>
         
         <div className="flex gap-2 items-center">
-          {/* 🆕 Calculadora con estilo slate de dispositivo físico */}
           <Calculadora />
 
           {vistaActual === 'calendario' ? (
             <>
-              {/* 🆕 Configurar Personal: color turquesa/cian de recursos humanos */}
+              <button
+                onClick={() => setVistaActual('pacientes')}
+                className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 border border-emerald-200 shadow-sm transition-all"
+              >
+                <UserCircle size={16} className="text-emerald-600" /> 👥 Gestión Pacientes
+              </button>
               <button
                 onClick={() => setVistaActual('personal')}
                 className="bg-cyan-50 text-cyan-700 hover:bg-cyan-100 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 border border-cyan-200 shadow-sm transition-all"
               >
                 <Users size={16} className="text-cyan-600" /> 👥 Configurar Personal
               </button>
-              {/* 🆕 Ver Estadísticas: color púrpura/violeta analítico moderno */}
               <button
                 onClick={() => setVistaActual('estadisticas')}
                 className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
@@ -445,13 +465,20 @@ function App() {
           </div>
         ) : vistaActual === 'estadisticas' ? (
           <Estadisticas citas={citas} personalList={personalList} />
-        ) : (
+        ) : vistaActual === 'personal' ? (
           <GestionPersonal 
             personal={personalList}
             onAdd={handleAddPersonal}
             onUpdate={handleUpdatePersonal}
             onDelete={handleDelPersonal}
             onVolver={() => setVistaActual('calendario')}
+          />
+        ) : (
+          <GestionPacientes 
+            pacientes={pacientes}
+            onAddPaciente={handleAddPaciente}
+            onUpdatePaciente={handleUpdatePaciente}
+            onDeletePaciente={handleDelPaciente}
           />
         )
       )}

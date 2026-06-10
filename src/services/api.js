@@ -1,73 +1,115 @@
 // src/services/api.js
-import { supabase } from '../lib/supabase'; // Usamos tu ruta original de importación
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const apiCitas = {
-  // Descarga las citas respetando el formato plano que tu App.jsx original ya sabe manejar
   async getAll() {
-    const { data, error } = await supabase.from('citas').select('*');
-    if (error) throw error;
-    return (data || []).map(cita => ({
-      ...cita,
-      id: String(cita.id)
-    }));
-  },
-
-  // Inserta una cita tal cual la calcula tu manejador
-  async insert(nuevaCita) {
-    const { data, error } = await supabase.from('citas').insert([nuevaCita]).select();
-    if (error) throw error;
-    return data[0];
-  },
-
-  // Actualiza la cita en base de datos
-  async update(id, citaActualizadaEstructura) {
     const { data, error } = await supabase
       .from('citas')
-      .update(citaActualizadaEstructura)
-      .eq('id', parseInt(id))
+      .select('*')
+      .order('start', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+  async insert(cita) {
+    const { data, error } = await supabase
+      .from('citas')
+      .insert([cita])
       .select();
     if (error) throw error;
     return data[0];
   },
-
-  // Elimina la cita
+  async update(id, datos) {
+    const { data, error } = await supabase
+      .from('citas')
+      .update(datos)
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  },
   async delete(id) {
-    const { error } = await supabase.from('citas').delete().eq('id', parseInt(id));
+    const { error } = await supabase
+      .from('citas')
+      .delete()
+      .eq('id', id);
     if (error) throw error;
     return true;
   }
 };
 
-// 🆕 NUEVAS LLAMADAS PARA TU PANEL DE GESTIÓN DE PERSONAL
 export const apiPersonal = {
-  // Descarga toda la plantilla
   async getAll() {
-    const { data, error } = await supabase.from('personal').select('*').order('id', { ascending: true });
-    if (error) throw error;
-    return data || [];
-  },
-
-  // Añade un nuevo trabajador con su cuadrante JSON
-  async insert(nuevoTrabajador) {
-    const { data, error } = await supabase.from('personal').insert([nuevoTrabajador]).select();
-    if (error) throw error;
-    return data[0];
-  },
-
-  // Modifica la ficha del empleado
-  async update(id, datosActualizados) {
     const { data, error } = await supabase
       .from('personal')
-      .update(datosActualizados)
-      .eq('id', parseInt(id))
+      .select('*')
+      .order('nombre', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+  async insert(empleado) {
+    const { data, error } = await supabase
+      .from('personal')
+      .insert([empleado])
       .select();
     if (error) throw error;
     return data[0];
   },
-
-  // Da de baja al trabajador
+  async update(id, datos) {
+    const { data, error } = await supabase
+      .from('personal')
+      .update(datos)
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  },
   async delete(id) {
-    const { error } = await supabase.from('personal').delete().eq('id', parseInt(id));
+    const { error } = await supabase
+      .from('personal')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    return true;
+  }
+};
+
+// CONEXIÓN CON TU TABLA DE PACIENTES (COLUMNAS: apellido, notas)
+export const apiPacientes = {
+  async getAll() {
+    const { data, error } = await supabase
+      .from('pacientes')
+      .select('*')
+      .order('nombre', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+  async insert(paciente) {
+    const { data, error } = await supabase
+      .from('pacientes')
+      .insert([paciente])
+      .select();
+    if (error) throw error;
+    return data[0];
+  },
+  async update(id, datos) {
+    const { data, error } = await supabase
+      .from('pacientes')
+      .update(datos)
+      .eq('id', id)
+      .select();
+    if (error) throw error;
+    return data[0];
+  },
+  async delete(id) {
+    const { error } = await supabase
+      .from('pacientes')
+      .delete()
+      .eq('id', id);
     if (error) throw error;
     return true;
   }
