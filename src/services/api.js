@@ -37,3 +37,38 @@ export const apiCitas = {
     return true;
   }
 };
+
+// 🆕 NUEVAS LLAMADAS PARA TU PANEL DE GESTIÓN DE PERSONAL
+export const apiPersonal = {
+  // Descarga toda la plantilla
+  async getAll() {
+    const { data, error } = await supabase.from('personal').select('*').order('id', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // Añade un nuevo trabajador con su cuadrante JSON
+  async insert(nuevoTrabajador) {
+    const { data, error } = await supabase.from('personal').insert([nuevoTrabajador]).select();
+    if (error) throw error;
+    return data[0];
+  },
+
+  // Modifica la ficha del empleado
+  async update(id, datosActualizados) {
+    const { data, error } = await supabase
+      .from('personal')
+      .update(datosActualizados)
+      .eq('id', parseInt(id))
+      .select();
+    if (error) throw error;
+    return data[0];
+  },
+
+  // Da de baja al trabajador
+  async delete(id) {
+    const { error } = await supabase.from('personal').delete().eq('id', parseInt(id));
+    if (error) throw error;
+    return true;
+  }
+};

@@ -11,12 +11,15 @@ function Estadisticas({ citas, personalList }) {
   // 1. Filtrar las citas correspondientes al mes seleccionado
   const citasDelMes = citas.filter(cita => cita.start.startsWith(mesFiltro));
 
-  // 2. 🧠 PROCESAMIENTO AVANZADO: Contabilizar roles de Principal y Asistente
-  const datosEspecialistas = personalList.map(nombre => {
+  // 2. 🧠 PROCESAMIENTO AVANZADO: Contabilizar roles de Principal y Asistente (Adaptado a Array de Objetos)
+  const datosEspecialistas = personalList.map(p => {
+    // Reconstruimos el nombre completo idéntico a cómo se guarda en las citas
+    const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+
     // Filtrar cuando es el encargado principal
-    const comoPrincipal = citasDelMes.filter(c => c.extendedProps.principal === nombre);
+    const comoPrincipal = citasDelMes.filter(c => c.extendedProps.principal === nombreCompleto);
     // Filtrar cuando acude en calidad de asistente/auxiliar
-    const comoAsistente = citasDelMes.filter(c => c.extendedProps.asistente === nombre);
+    const comoAsistente = citasDelMes.filter(c => c.extendedProps.asistente === nombreCompleto);
     
     // Calcular minutos acumulados como Principal
     const minutosPrincipal = comoPrincipal.reduce((acc, c) => {
@@ -31,7 +34,7 @@ function Estadisticas({ citas, personalList }) {
     }, 0);
 
     return {
-      name: nombre,
+      name: nombreCompleto,
       // Métricas de volumen (citas)
       'Citas como Principal': comoPrincipal.length,
       'Citas como Asistente': comoAsistente.length,
@@ -124,7 +127,6 @@ function Estadisticas({ citas, personalList }) {
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                {/* Al usar el mismo stackId, Recharts apila las barras una encima de otra */}
                 <Bar dataKey="Citas como Principal" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Citas como Asistente" stackId="a" fill="#93c5fd" radius={[4, 4, 0, 0]} />
               </BarChart>

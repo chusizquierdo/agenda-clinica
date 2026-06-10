@@ -17,9 +17,8 @@ function Calendario({
   setCitaSeleccionada 
 }) {
 
-  const [filtroEspecialista, setFiltroEspecialista] = useState('Todos');
+  const [filtrosEspecialistas, setFiltrosEspecialistas] = useState(['Todos']);
 
-  // Estados del modal de edición
   const [editPaciente, setEditPaciente] = useState('');
   const [editHora, setEditHora] = useState('');
   const [editTratamiento, setEditTratamiento] = useState('revision');
@@ -113,10 +112,31 @@ function Calendario({
     });
   };
 
+  const alternarFiltroEspecialista = (nombreCompleto) => {
+    if (nombreCompleto === 'Todos') {
+      setFiltrosEspecialistas(['Todos']);
+      return;
+    }
+
+    let nuevosFiltros = filtrosEspecialistas.filter(f => f !== 'Todos');
+
+    if (nuevosFiltros.includes(nombreCompleto)) {
+      nuevosFiltros = nuevosFiltros.filter(f => f !== nombreCompleto);
+    } else {
+      nuevosFiltros.push(nombreCompleto);
+    }
+
+    if (nuevosFiltros.length === 0) {
+      setFiltrosEspecialistas(['Todos']);
+    } else {
+      setFiltrosEspecialistas(nuevosFiltros);
+    }
+  };
+
   const citasFiltradas = citas.filter(cita => {
-    if (filtroEspecialista === 'Todos') return true;
+    if (filtrosEspecialistas.includes('Todos')) return true;
     const equipo = cita.extendedProps?.personalInvolucrado || [];
-    return equipo.includes(filtroEspecialista);
+    return equipo.some(miembro => filtrosEspecialistas.includes(miembro));
   });
 
   const handleImprimirDia = () => {
@@ -169,24 +189,29 @@ function Calendario({
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-xs font-bold text-slate-500 uppercase px-2">Filtrar:</span>
           <button
-            onClick={() => setFiltroEspecialista('Todos')}
+            onClick={() => alternarFiltroEspecialista('Todos')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              filtroEspecialista === 'Todos' ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-200'
+              filtrosEspecialistas.includes('Todos') 
+                ? 'bg-slate-800 text-white shadow-sm' 
+                : 'bg-white text-slate-600 hover:bg-slate-200'
             }`}
           >
             👁️ Ver Todo
           </button>
           {personalList.map(p => {
             const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+            const estaActivo = filtrosEspecialistas.includes(nombreCompleto);
             return (
               <button
                 key={p.id}
-                onClick={() => setFiltroEspecialista(nombreCompleto)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  filtroEspecialista === nombreCompleto ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-200'
+                onClick={() => alternarFiltroEspecialista(nombreCompleto)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 border ${
+                  estaActivo 
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-md' 
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                👤 {nombreCompleto}
+                <span>{estaActivo ? '✅' : '👤'}</span> {nombreCompleto}
               </button>
             );
           })}
@@ -219,6 +244,7 @@ function Calendario({
           eventClick={handleEventClick}
           eventDrop={handleEventDropOrResize}
           eventResize={handleEventDropOrResize}
+          hiddenDays={[0, 6]} // 🆕 OCULTA SÁBADOS (6) Y DOMINGOS (0) POR COMPLETO DE LA PARRILLA
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
@@ -227,7 +253,7 @@ function Calendario({
         />
       </div>
 
-      {/* 📜 VISTA IMPRESA (Corregida estrictamente sin espacios en los tags TR) */}
+      {/* VISTA IMPRESA */}
       <div id="print-sheet">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '10px' }}>
           <div>
@@ -277,7 +303,7 @@ function Calendario({
         )}
       </div>
 
-      {/* MODAL DE EDICIÓN FLOTANTE (Tu diseño original exacto) */}
+      {/* MODAL DE EDICIÓN FLOTANTE */}
       {citaSeleccionada && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 hide-on-print">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full border border-slate-300 overflow-hidden">

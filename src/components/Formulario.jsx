@@ -13,12 +13,37 @@ function Formulario({
   error,
   advertencia,
   handleCrearCita,
-  personalList = [] // Recibimos el personal dinámico desde App.jsx
+  personalList = [] 
 }) {
 
-  // Filtramos el personal según su rol asignado en la ficha de Supabase
-  const especialistas = personalList.filter(p => p.rol === 'Especialista' || p.rol === 'Odontólogo');
-  const asistentesYHigienistas = personalList.filter(p => p.rol === 'Asistente' || p.rol === 'Higienista');
+  const especialistas = personalList.filter(p => p.role === 'Especialista' || p.rol === 'Especialista' || p.rol === 'Odontólogo');
+  const asistentesYHigienistas = personalList.filter(p => p.role === 'Asistente' || p.rol === 'Asistente' || p.rol === 'Higienista');
+
+  // 🆕 Lógica de intercepción de fecha para denegar fines de semana
+  const controlarCambioFecha = (e) => {
+    const fechaSeleccionada = e.target.value;
+    if (!fechaSeleccionada) return;
+
+    // Convertir de forma segura para evitar desajustes de franja horaria local
+    const partes = fechaSeleccionada.split('-');
+    const objetoFecha = new Date(partes[0], partes[1] - 1, partes[2]);
+    const diaDeLaSemana = objetoFecha.getDay();
+
+    // 0 = Domingo, 6 = Sábado
+    if (diaDeLaSemana === 0 || diaDeLaSemana === 6) {
+      alert('⚠️ Fines de semana cerrados. Por favor, selecciona una fecha de Lunes a Viernes.');
+      
+      // Restauramos al lunes posterior o mantenemos el valor anterior recalculando
+      const hoy = new Date();
+      const diaHoy = hoy.getDay();
+      if (diaHoy === 6) hoy.setDate(hoy.getDate() + 2);
+      if (diaHoy === 0) hoy.setDate(hoy.getDate() + 1);
+      
+      setFecha(`${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`);
+    } else {
+      setFecha(fechaSeleccionada);
+    }
+  };
 
   return (
     <form onSubmit={handleCrearCita} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -50,7 +75,7 @@ function Formulario({
             type="date"
             required
             value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
+            onChange={controlarCambioFecha} // 🆕 Intercepta el cambio para bloquear fines de semana
             className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
           />
         </div>
@@ -87,14 +112,14 @@ function Formulario({
           value={principal}
           onChange={(e) => setPrincipal(e.target.value)}
           required
-          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
           <option value="">-- Selecciona un Especialista --</option>
           {especialistas.map(esp => {
             const nombreCompleto = `${esp.nombre} ${esp.apellidos}`.trim();
             return (
               <option key={esp.id} value={nombreCompleto}>
-                {nombreCompleto} ({esp.rol})
+                {nombreCompleto} ({esp.rol || esp.role})
               </option>
             );
           })}
