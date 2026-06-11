@@ -147,6 +147,29 @@ function Calendario({
     .filter(c => c.start.startsWith(fechaActual))
     .sort((a, b) => a.start.localeCompare(b.start));
 
+  // 🌟 INYECTOR CROMÁTICO EN CALIENTE (REACTIVIDAD FIABLE AL 100%)
+  // Busca el color vivo guardado en el estado general y se lo inyecta al DOM del evento sin clonar objetos.
+  const handleEventDidMount = (info) => {
+    const especialistaNombre = info.event.extendedProps?.principal;
+    if (!especialistaNombre) return;
+
+    // Si la cita tiene un color de error por Fuera de Turno asignado en App.jsx, se respeta la alerta visual
+    if (info.event.backgroundColor === '#ef4444') {
+      info.el.style.backgroundColor = '#ef4444';
+      return;
+    }
+
+    // Buscamos dinámicamente al trabajador en la lista sincronizada usando 'apellido' corregido
+    const trabajadorCoincidente = personalList.find(p => {
+      const stringCompleto = `${p.nombre} ${p.apellido || ''}`.trim().toLowerCase();
+      return stringCompleto === especialistaNombre.toLowerCase() || especialistaNombre.toLowerCase().includes(p.nombre.toLowerCase());
+    });
+
+    if (trabajadorCoincidente?.color) {
+      info.el.style.backgroundColor = trabajadorCoincidente.color;
+    }
+  };
+
   return (
     <div className="bg-white p-4 rounded-xl shadow-md border border-slate-200">
       
@@ -199,7 +222,8 @@ function Calendario({
             👁️ Ver Todo
           </button>
           {personalList.map(p => {
-            const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+            // 🆕 CORRECCIÓN DE COLUMNA: 'apellido' en lugar de 'apellidos'
+            const nombreCompleto = `${p.nombre} ${p.apellido || ''}`.trim();
             const estaActivo = filtrosEspecialistas.includes(nombreCompleto);
             return (
               <button
@@ -244,7 +268,8 @@ function Calendario({
           eventClick={handleEventClick}
           eventDrop={handleEventDropOrResize}
           eventResize={handleEventDropOrResize}
-          hiddenDays={[0, 6]} // 🆕 OCULTA SÁBADOS (6) Y DOMINGOS (0) POR COMPLETO DE LA PARRILLA
+          eventDidMount={handleEventDidMount} // 🌟 ASIGNADO EL INYECTOR CROMÁTICO EN EL MONTAJE DEL EVENTO
+          hiddenDays={[0, 6]} 
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
@@ -336,7 +361,8 @@ function Calendario({
                 <select value={editPrincipal} onChange={(e) => setEditPrincipal(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="">-- Selecciona --</option>
                   {personalList.map(p => {
-                    const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+                    // 🆕 CORRECCIÓN DE COLUMNA: 'apellido' en lugar de 'apellidos'
+                    const nombreCompleto = `${p.nombre} ${p.apellido || ''}`.trim();
                     return <option key={p.id} value={nombreCompleto}>{nombreCompleto}</option>;
                   })}
                 </select>
@@ -346,7 +372,8 @@ function Calendario({
                 <select value={editAsistente} onChange={(e) => setEditAsistente(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50 text-slate-700 text-sm font-medium">
                   <option value="Ninguno">Ninguno (Va sola)</option>
                   {personalList.map(p => {
-                    const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+                    // 🆕 CORRECCIÓN DE COLUMNA: 'apellido' en lugar de 'apellidos'
+                    const nombreCompleto = `${p.nombre} ${p.apellido || ''}`.trim();
                     return <option key={p.id} value={nombreCompleto} disabled={nombreCompleto === editPrincipal}>{nombreCompleto}</option>;
                   })}
                 </select>

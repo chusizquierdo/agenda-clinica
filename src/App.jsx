@@ -6,9 +6,13 @@ import Calendario from './components/Calendario';
 import Estadisticas from './components/Estadisticas';
 import GestionPersonal from './components/GestionPersonal'; 
 import GestionPacientes from './components/GestionPacientes'; 
+import GestionVacaciones from './components/GestionVacaciones';
 import Calculadora from './components/Calculadora'; 
 import RelojDigital from './components/RelojDigital'; 
-import { BarChart3, ArrowLeft, Users, UserCircle, LogOut, LogIn } from 'lucide-react';
+import Login from './components/Login';
+import { apiAuth } from './services/auth';
+import { apiVacaciones } from './services/vacaciones';
+import { BarChart3, ArrowLeft, Users, UserCircle, LogOut, CalendarDays } from 'lucide-react';
 import { apiCitas, apiPersonal, apiPacientes } from './services/api'; 
 
 import logoClinica from './assets/logo.avif';
@@ -17,7 +21,7 @@ const PERSONAL_INICIAL_OBJ = [
   { 
     id: 1, 
     nombre: 'Rut', 
-    apellidos: 'Barrero', 
+    apellido: 'Barrero', 
     rol: 'Especialista', 
     color: '#3b82f6',
     horario: {
@@ -31,7 +35,7 @@ const PERSONAL_INICIAL_OBJ = [
   { 
     id: 2, 
     nombre: 'Miriam', 
-    apellidos: 'Quiñones', 
+    apellido: 'Quiñones', 
     rol: 'Especialista', 
     color: '#ef4444',
     horario: {
@@ -45,13 +49,13 @@ const PERSONAL_INICIAL_OBJ = [
   { 
     id: 3, 
     nombre: 'María', 
-    apellidos: '', 
+    apellido: '', 
     rol: 'Asistente', 
     color: '#10b981',
     horario: {
       lunes: { trabaja: true, inicio: '09:00', fin: '19:00' },
       martes: { trabaja: true, inicio: '09:00', fin: '19:00' },
-      miercoles: { trabaja: true, inicio: '09:00', fin: '19:00' },
+      miercoles: { trabaja: true, inicio: '09:00', py: '19:00' },
       jueves: { trabaja: true, inicio: '09:00', fin: '19:00' },
       viernes: { trabaja: true, inicio: '09:00', fin: '19:00' }
     }
@@ -79,12 +83,13 @@ function App() {
 
   const fechaFijaPrueba = obtenerFechaInicialValida();
   
-  // 🌟 NUEVO ESTADO: Controla si el usuario está dentro del sistema o fuera
-  const [sesionActiva, setSesionActiva] = useState(true);
+  const [usuarioLogueado, setUsuarioLogueado] = useState(null);
+  const [comprobandoSesion, setComprobandoSesion] = useState(true);
 
   const [citas, setCitas] = useState([]);
   const [personalList, setPersonalList] = useState([]); 
   const [pacientes, setPacientes] = useState([]); 
+  const [vacaciones, setVacaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [vistaActual, setVistaActual] = useState('calendario');
   
@@ -99,17 +104,110 @@ function App() {
   const [advertencia, setAdvertencia] = useState('');
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
 
+  // 🌟 DECLARACIONES CON HOISTING GARANTIZADO (Se pueden llamar desde cualquier lugar)
+  function compruebaTurnoEmpleado(nombreCompleto, fechaStr, hIniStr, hFinStr) {
+    const empData = personalList.find(p => `${p.nombre} ${p.apellido || ''}`.trim() === nombreCompleto);
+    if (!empData) return true; 
+
+    const cuadrante = empData.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
+    const dummyFecha = new Date(`${fechaStr}T00:00:00`);
+    const diaSemanaNombre = TRADUCTOR_DIAS[dummyFecha.getDay()];
+    const reglaDia = cuadrante[diaSemanaNombre];
+
+    if (!reglaDia || !reglaDia.trabaja) return false;
+
+    const [hIn, mIn] = hIniStr.split(':').map(Number);
+    const [hFi, mFi] = hFinStr.split(':').map(Number);
+    const [hLimIn, mLimIn] = reglaDia.inicio.split(':').map(Number);
+    const [hLimFi, mLimFi] = reglaDia.fin.split(':').map(Number);
+
+    return (hIn * 60 + mIn) >= (hLimIn * 60 + mLimIn) && (hFi * 60 + mFi) <= (hLimFi * 60 + mLimFi);
+  }
+
+  function comprobarDisponibilidad(fNueva, hIniNueva, hFinNueva, pers, idEx = null) {
+    if (pers === 'Ninguno') return true;
+
+    const estaDeVacaciones = vacaciones.some(v => {
+      const nombreTrabajador = `${v.nombre_empleado}`.toLowerCase();
+      const persMinus = pers.toLowerCase();
+      if (!persMinus.includes(nombreTrabajador)) return false;
+      return fNueva >= v.fecha_inicio && fNueva <= v.fecha_fin;
+    });
+
+    if (estaDeVacaciones) return false; 
+
+    if (!compruebaTurnoEmpleado(pers, fNueva, hIniNueva, hFinNueva)) {
+      return false; 
+    }
+
+    const [hIn, mIn] = hIniNueva.split(':').map(Number);
+    const [hFi, mFi] = hFinNueva.split(':').map(Number);
+    const minIniN = hIn * 60 + mIn;
+    const minFinN = hFi * 60 + mFi;
+    
+    for (let cita of citas) {
+      if (idEx && String(cita.id) === String(idEx)) continue;
+      const [fCita, tCitaIni] = cita.start.split('T');
+      const tCitaFin = cita.end.split('T')[1];
+      if (fNueva !== fCita) continue;
+      const [hCitaIn, mCitaIn] = tCitaIni.split(':').map(Number);
+      const [hCitaFi, mCitaFi] = tCitaFin.split(':').map(Number);
+      const minCitaI = hCitaIn * 60 + mCitaIn;
+      const minCitaF = hCitaFi * 60 + mCitaFi;
+      if (minIniN < minCitaF && minFinN > minCitaI) {
+        if ((cita.extendedProps?.personalInvolucrado || []).includes(pers)) return false;
+      }
+    }
+    return true; 
+  }
+
+  function calcularMetadatosCita(fechaStr, hIniStr, pElegido, aElegido, tKey, finId, nomPaciente) {
+    const infoTratamiento = DURACION_TRATAMIENTOS[tKey];
+    const hFinT = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
+    const turnoCorrecto = compruebaTurnoEmpleado(pElegido, fechaStr, hIniStr, hFinT);
+    const empData = personalList.find(p => `${p.nombre} ${p.apellido || ''}`.trim() === pElegido);
+    const colorPorDefecto = empData?.color || '#64748b';
+
+    let backgroundColor = !turnoCorrecto ? '#ef4444' : colorPorDefecto;
+    let title = !turnoCorrecto ? `⚠️ FUERA DE TURNO (${hFinT}) - 👤 ${nomPaciente}` : `👤 ${nomPaciente} - ${infoTratamiento.nombre}`;
+    return { backgroundColor, title, pacienteLimpio: nomPaciente.trim() || "Paciente Anónimo" };
+  }
+
   useEffect(() => {
+    const verificarSesionInicial = async () => {
+      const user = await apiAuth.getUsuarioActual();
+      setUsuarioLogueado(user);
+      setComprobandoSesion(false);
+    };
+
+    verificarSesionInicial();
+
+    const { subscription } = apiAuth.onEstadoSesionCambia((user) => {
+      setUsuarioLogueado(user);
+    });
+
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!usuarioLogueado) return;
+
     const cargarDatosIniciales = async () => {
       try {
         setLoading(true);
-        const [citasFormateadas, personalDB, pacientesDB] = await Promise.all([
+        const [citasFormateadas, personalDB, pacientesDB, vacacionesDB] = await Promise.all([
           apiCitas.getAll(),
           apiPersonal.getAll(),
-          apiPacientes.getPorPagina(1, 50) 
+          apiPacientes.getPorPagina(1, 50),
+          apiVacaciones.getAll()
         ]);
-        setCitas(citasFormateadas);
+
+        const citasNormalizadas = (citasFormateadas || []).map(c => ({ ...c, id: String(c.id) }));
+        setCitas(citasNormalizadas);
         setPacientes(pacientesDB || []);
+        setVacaciones(vacacionesDB || []);
 
         if (personalDB && personalDB.length > 0) {
           const plantillaInyectada = personalDB.map(emp => {
@@ -133,9 +231,21 @@ function App() {
       }
     };
     cargarDatosIniciales();
-  }, []);
+  }, [usuarioLogueado]);
 
-  // Handlers para pacientes
+  const handleCerrarSesionReal = async () => {
+    const seguro = window.confirm("¿Seguro que deseas salir del panel clínico?");
+    if (!seguro) return;
+
+    try {
+      await apiAuth.logout();
+      setUsuarioLogueado(null);
+      setVistaActual('calendario');
+    } catch (err) {
+      alert('Error al cerrar la sesión de forma segura.');
+    }
+  };
+
   const handleAddPaciente = async (nuevoPac) => {
     const registroInsertado = await apiPacientes.insert(nuevoPac);
     setPacientes([...pacientes, registroInsertado]);
@@ -154,7 +264,6 @@ function App() {
     return true;
   };
 
-  // Handlers para personal
   const handleAddPersonal = async (nuevoTrabajador) => {
     try {
       const registroInsertado = await apiPersonal.insert(nuevoTrabajador);
@@ -170,8 +279,8 @@ function App() {
       setPersonalList(personalList.map(emp => emp.id === id ? registroActualizado : emp));
       
       const actual = personalList.find(e => e.id === id);
-      if (actual && principal === `${actual.nombre} ${actual.apellidos || ''}`.trim()) {
-        setPrincipal(`${datosActualizados.nombre} ${datosActualizados.apellidos || ''}`.trim());
+      if (actual && principal === `${actual.nombre} ${actual.apellido || ''}`.trim()) {
+        setPrincipal(`${datosActualizados.nombre} ${datosActualizados.apellido || ''}`.trim());
       }
     } catch (err) {
       alert('❌ Error al actualizar los datos en Supabase.');
@@ -189,8 +298,20 @@ function App() {
     }
   };
 
+  const handleAddVacacion = async (nuevaVac) => {
+    const registroInsertado = await apiVacaciones.insert(nuevaVac);
+    setVacaciones([...vacaciones, registroInsertado]);
+    return registroInsertado;
+  };
+
+  const handleDelVacacion = async (id) => {
+    await apiVacaciones.delete(id);
+    setVacaciones(vacaciones.filter(v => v.id !== id));
+    return true;
+  };
+
   const handleActualizarCita = async (id, datosActualizados) => {
-    const citaOriginal = citas.find(c => c.id === id);
+    const citaOriginal = citas.find(c => String(c.id) === String(id));
     if (!citaOriginal) return;
 
     const [fechaCita] = citaOriginal.start.split('T');
@@ -210,6 +331,15 @@ function App() {
       const dummyInicio = new Date(nuevoStart);
       const dummyFin = new Date(dummyInicio.getTime() + infoTratamiento.minutos * 60000);
       nuevoEnd = `${fechaCita}T${String(dummyFin.getHours()).padStart(2, '0')}:${String(dummyFin.getMinutes()).padStart(2, '0')}:00`;
+    }
+
+    if (!comprobarDisponibilidad(fechaCita, nuevoStart.split('T')[1].slice(0, 5), nuevoEnd.split('T')[1].slice(0, 5), nuevoPrincipal, id)) {
+      alert(`❌ Operación denegada: ${nuevoPrincipal} está de vacaciones o no disponible en este rango.`);
+      return;
+    }
+    if (nuevoAsistente !== 'Ninguno' && !comprobarDisponibilidad(fechaCita, nuevoStart.split('T')[1].slice(0, 5), nuevoEnd.split('T')[1].slice(0, 5), nuevoAsistente, id)) {
+      alert(`❌ Operación denegada: El asistente está de vacaciones o no disponible en este rango.`);
+      return;
     }
 
     const equipo = [nuevoPrincipal];
@@ -237,7 +367,7 @@ function App() {
 
     try {
       const registroActualizado = await apiCitas.update(id, citaActualizadaEstructura);
-      setCitas(citas.map(cita => cita.id === id ? { ...registroActualizado, id: String(registroActualizado.id) } : cita));
+      setCitas(citas.map(cita => String(cita.id) === String(id) ? { ...registroActualizado, id: String(registroActualizado.id) } : cita));
       setCitaSeleccionada(null);
     } catch (err) {
       alert('No se pudieron guardar los cambios: ' + (err.message || ''));
@@ -250,10 +380,11 @@ function App() {
 
     try {
       await apiCitas.delete(id);
-      setCitas(citas.filter(cita => cita.id !== id));
+      setCitas(prevCitas => prevCitas.filter(cita => String(cita.id) !== String(id)));
       setCitaSeleccionada(null);
     } catch (err) {
-      alert('No se pudo eliminar la cita.');
+      console.error(err);
+      alert('No se pudo eliminar la cita de la base de datos.');
     }
   };
 
@@ -270,8 +401,20 @@ function App() {
     const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
     const horaFinStr = finId.toTimeString().slice(0, 5);
 
-    const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === principal);
-    const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFOTT;
+    const coincidenciaVacaciones = vacaciones.some(v => {
+      const nombreTrabajador = `${v.nombre_empleado}`.toLowerCase();
+      const principalMinus = principal.toLowerCase();
+      if (!principalMinus.includes(nombreTrabajador)) return false;
+      return fecha >= v.fecha_inicio && fecha <= v.fecha_fin;
+    });
+
+    if (coincidenciaVacaciones) {
+      setAdvertencia(`🚨 ¡ATENCIÓN! ${principal} tiene VACACIONES registradas en esta fecha.`);
+      return;
+    }
+
+    const empData = personalList.find(p => `${p.nombre} ${p.apellido || ''}`.trim() === principal);
+    const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
     
     const diaSemanaNombre = TRADUCTOR_DIAS[dummy.getDay()];
     const reglaDia = cuadrante[diaSemanaNombre];
@@ -294,64 +437,7 @@ function App() {
     if (minCitaInicio < minTurnoInicio || minCitaFin > minTurnoFin) {
       setAdvertencia(`⚠️ ¡Fuera de Turno! ${principal} trabaja de ${reglaDia.inicio}h a ${reglaDia.fin}h los ${diaSemanaNombre}s.`);
     }
-  }, [hora, tratamiento, principal, fecha, personalList]);
-
-  const compruebaTurnoEmpleado = (nombreCompleto, fechaStr, hIniStr, hFinStr) => {
-    const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === nombreCompleto);
-    if (!empData) return true; 
-
-    const cuadrante = empData.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
-    const dummyFecha = new Date(`${fechaStr}T00:00:00`);
-    const diaSemanaNombre = TRADUCTOR_DIAS[dummyFecha.getDay()];
-    const reglaDia = cuadrante[diaSemanaNombre];
-
-    if (!reglaDia || !reglaDia.trabaja) return false;
-
-    const [hIn, mIn] = hIniStr.split(':').map(Number);
-    const [hFi, mFi] = hFinStr.split(':').map(Number);
-    const [hLimIn, mLimIn] = reglaDia.inicio.split(':').map(Number);
-    const [hLimFi, mLimFi] = reglaDia.fin.split(':').map(Number);
-
-    return (hIn * 60 + mIn) >= (hLimIn * 60 + mLimIn) && (hFi * 60 + mFi) <= (hLimFi * 60 + mLimFi);
-  };
-
-  const comprobarDisponibilidad = (fNueva, hIniNueva, hFinNueva, pers, idEx = null) => {
-    if (pers !== 'Ninguno' && !compruebaTurnoEmpleado(pers, fNueva, hIniNueva, hFinNueva)) {
-      return false; 
-    }
-
-    const [hIn, mIn] = hIniNueva.split(':').map(Number);
-    const [hFi, mFi] = hFinNueva.split(':').map(Number);
-    const minIniN = hIn * 60 + mIn;
-    const minFinN = hFi * 60 + mFi;
-    
-    for (let cita of citas) {
-      if (idEx && cita.id === idEx) continue;
-      const [fCita, tCitaIni] = cita.start.split('T');
-      const tCitaFin = cita.end.split('T')[1];
-      if (fNueva !== fCita) continue;
-      const [hCitaIn, mCitaIn] = tCitaIni.split(':').map(Number);
-      const [hCitaFi, mCitaFi] = tCitaFin.split(':').map(Number);
-      const minCitaI = hCitaIn * 60 + mCitaIn;
-      const minCitaF = hCitaFi * 60 + mCitaFi;
-      if (minIniN < minCitaF && minFinN > minCitaI) {
-        if ((cita.extendedProps?.personalInvolucrado || []).includes(pers)) return false;
-      }
-    }
-    return true; 
-  };
-
-  const calcularMetadatosCita = (fechaStr, hIniStr, pElegido, aElegido, tKey, finId, nomPaciente) => {
-    const infoTratamiento = DURACION_TRATAMIENTOS[tKey];
-    const hFinT = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
-    const turnoCorrecto = compruebaTurnoEmpleado(pElegido, fechaStr, hIniStr, hFinT);
-    const empData = personalList.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === pElegido);
-    const colorPorDefecto = empData?.color || '#64748b';
-
-    let backgroundColor = !turnoCorrecto ? '#ef4444' : colorPorDefecto;
-    let title = !turnoCorrecto ? `⚠️ FUERA DE TURNO (${hFinT}) - 👤 ${nomPaciente}` : `👤 ${nomPaciente} - ${infoTratamiento.nombre}`;
-    return { backgroundColor, title, pacienteLimpio: nomPaciente.trim() || "Paciente Anónimo" };
-  };
+  }, [hora, tratamiento, principal, fecha, personalList, vacaciones]);
 
   const handleCrearCita = async (e) => {
     e.preventDefault();
@@ -368,10 +454,10 @@ function App() {
     const hFinT = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
     
     if (!comprobarDisponibilidad(fecha, hIniT, hFinT, principal)) {
-      return setError(`❌ Conflicto: Horario no disponible o sobrepuesto para ${principal}.`);
+      return setError(`❌ Bloqueo por Vacaciones o Conflicto: Horario no disponible para ${principal}.`);
     }
     if (asistente !== 'Ninguno' && !comprobarDisponibilidad(fecha, hIniT, hFinT, asistente)) {
-      return setError(`❌ Conflicto: Horario no disponible o sobrepuesto para el Asistente.`);
+      return setError(`❌ Bloqueo por Vacaciones o Conflicto: Horario no disponible para el Asistente.`);
     }
 
     const equipo = [principal]; 
@@ -394,38 +480,19 @@ function App() {
     }
   };
 
-  // 🌟 VISTA CORPORATIVA: Pantalla que se muestra al cerrar sesión
-  if (!sesionActiva) {
+  if (comprobandoSesion) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center select-none">
-        <div className="bg-white/5 border border-white/10 p-10 rounded-3xl max-w-sm w-full shadow-2xl backdrop-blur-md space-y-6 animate-fadeIn">
-          <div className="flex justify-center">
-            <img 
-              src={logoClinica} 
-              alt="Logo Clínica" 
-              className="h-24 w-auto object-contain filter drop-shadow-md"
-            />
-          </div>
-          
-          <div className="space-y-1">
-            <h2 className="text-white font-bold text-lg tracking-wide uppercase">Clínica Médica</h2>
-            <p className="text-slate-400 text-xs">Sesión finalizada de forma segura.</p>
-          </div>
-
-          <div className="border-t border-white/10 pt-4">
-            <button
-              onClick={() => setSesionActiva(true)}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-lg uppercase tracking-wider"
-            >
-              <LogIn size={16} /> Acceder al Sistema
-            </button>
-          </div>
-        </div>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-4 border-white/10 border-t-blue-500"></div>
+        <p className="text-slate-500 text-xs tracking-wider uppercase font-medium">Verificando seguridad...</p>
       </div>
     );
   }
 
-  // VISTA PRINCIPAL (Cuando la sesión está activa)
+  if (!usuarioLogueado) {
+    return <Login onLoginExitoso={(user) => setUsuarioLogueado(user)} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4 hide-on-print">
@@ -452,6 +519,12 @@ function App() {
                 <Users size={16} className="text-cyan-600" /> 👥 Configurar Personal
               </button>
               <button
+                onClick={() => setVistaActual('vacaciones')}
+                className="bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 border border-amber-200 shadow-sm transition-all"
+              >
+                <CalendarDays size={16} className="text-amber-600" /> 🏖️ Vacaciones Personal
+              </button>
+              <button
                 onClick={() => setVistaActual('estadisticas')}
                 className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
               >
@@ -467,14 +540,9 @@ function App() {
             </button>
           )}
 
-          {/* 🌟 NUEVO BOTÓN: Cerrar Sesión con estilo clínico e icono sofisticado */}
           <button
-            onClick={() => {
-              const confirmar = window.confirm("¿Seguro que deseas salir del panel clínico?");
-              if (confirmar) setSesionActiva(false);
-            }}
+            onClick={handleCerrarSesionReal}
             className="bg-slate-100 text-slate-700 hover:bg-red-50 hover:text-red-700 font-bold py-2 px-3 rounded-xl text-xs flex items-center gap-1.5 border border-slate-200 shadow-sm transition-all"
-            title="Cerrar sesión de forma segura"
           >
             <LogOut size={15} /> Salir
           </button>
@@ -518,6 +586,14 @@ function App() {
             onAdd={handleAddPersonal}
             onUpdate={handleUpdatePersonal}
             onDelete={handleDelPersonal}
+            onVolver={() => setVistaActual('calendario')}
+          />
+        ) : vistaActual === 'vacaciones' ? (
+          <GestionVacaciones
+            personal={personalList}
+            vacaciones={vacaciones}
+            onAdd={handleAddVacacion}
+            onDelete={handleDelVacacion}
             onVolver={() => setVistaActual('calendario')}
           />
         ) : (
