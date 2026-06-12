@@ -1,15 +1,11 @@
-// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { DURACION_TRATAMIENTOS } from './data/config'; 
 import Formulario from './components/Formulario';
 import Calendario from './components/Calendario';
-import Estadisticas from './components/Estadisticas';
-import GestionPersonal from './components/GestionPersonal'; 
-import GestionPacientes from './components/GestionPacientes'; 
-import GestionVacaciones from './components/GestionVacaciones';
 import CambioPasswordModal from './components/CambioPasswordModal';
-import Header from './components/Header'; // 🌟 IMPORTADO EL NUEVO COMPONENTE
+import Header from './components/Header'; 
 import Login from './components/Login';
+import VistaAdministracion from './components/VistaAdministracion';
 import { apiAuth } from './services/auth';
 import { apiVacaciones } from './services/vacaciones';
 import { apiCitas, apiPersonal, apiPacientes } from './services/api'; 
@@ -51,7 +47,7 @@ const PERSONAL_INICIAL_OBJ = [
     color: '#10b981',
     horario: {
       lunes: { trabaja: true, inicio: '09:00', fin: '19:00' },
-      martes: { trabaja: true, inicio: '09:00', font: '19:00' },
+      martes: { trabaja: true, inicio: '09:00', fin: '19:00' },
       miercoles: { trabaja: true, inicio: '09:00', fin: '19:00' }, 
       jueves: { trabaja: true, inicio: '09:00', fin: '19:00' },
       viernes: { trabaja: true, inicio: '09:00', fin: '19:00' }
@@ -90,16 +86,6 @@ function App() {
   const [vacaciones, setVacaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [vistaActual, setVistaActual] = useState('calendario');
-  
-  const [paciente, setPaciente] = useState('');
-  const [fecha, setFecha] = useState(fechaFijaPrueba);
-  const [hora, setHora] = useState('09:00'); 
-  const [tratamiento, setTratamiento] = useState('revision'); 
-  const [principal, setPrincipal] = useState('');
-  const [asistente, setAsistente] = useState('Ninguno');
-  const [observaciones, setObservaciones] = useState('');
-  const [error, setError] = useState('');
-  const [advertencia, setAdvertencia] = useState('');
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
 
   function compruebaTurnoEmpleado(nombreCompleto, fechaStr, hIniStr, hFinStr) {
@@ -111,18 +97,21 @@ function App() {
     const diaSemanaNombre = TRADUCTOR_DIAS[dummyFecha.getDay()];
     const reglaDia = cuadrante[diaSemanaNombre];
 
-    if (!reglaDia || !reglaDia.trabaja) return false;
+    if (!reglaDia || (!reglaDia.trabaja && !reglaDia.works)) return false;
 
     const [hIn, mIn] = hIniStr.split(':').map(Number);
     const [hFi, mFi] = hFinStr.split(':').map(Number);
-    const [hLimIn, mLimIn] = reglaDia.inicio.split(':').map(Number);
-    const [hLimFi, mLimFi] = reglaDia.fin.split(':').map(Number);
+    const [hLimIn, mLimIn] = (reglaDia.inicio || '09:00').split(':').map(Number);
+    const [hLimFi, mLimFi] = (reglaDia.fin || '19:00').split(':').map(Number);
 
     return (hIn * 60 + mIn) >= (hLimIn * 60 + mLimIn) && (hFi * 60 + mFi) <= (hLimFi * 60 + mLimFi);
   }
 
   function comprobarDisponibilidad(fNueva, hIniNueva, hFinNueva, pers, idEx = null) {
     if (pers === 'Ninguno') return true;
+
+    // Diagnóstico inicial
+    console.log(`🔍 DEBUG: Validando ${pers} | ID Excluido: ${idEx} | ${fNueva} | ${hIniNueva} a ${hFinNueva}`);
 
     const estaDeVacaciones = vacaciones.some(v => {
       const nombreTrabajador = `${v.nombre_empleado}`.toLowerCase();
@@ -131,9 +120,13 @@ function App() {
       return fNueva >= v.fecha_inicio && fNueva <= v.fecha_fin;
     });
 
-    if (estaDeVacaciones) return false; 
+    if (estaDeVacaciones) {
+      console.log(`❌ Bloqueado: ${pers} está de vacaciones.`);
+      return false; 
+    }
 
     if (!compruebaTurnoEmpleado(pers, fNueva, hIniNueva, hFinNueva)) {
+      console.log(`❌ Bloqueado: ${pers} fuera de turno.`);
       return false; 
     }
 
@@ -144,15 +137,21 @@ function App() {
     
     for (let cita of citas) {
       if (idEx && String(cita.id) === String(idEx)) continue;
+      
       const [fCita, tCitaIni] = cita.start.split('T');
       const tCitaFin = cita.end.split('T')[1];
       if (fNueva !== fCita) continue;
+
       const [hCitaIn, mCitaIn] = tCitaIni.split(':').map(Number);
       const [hCitaFi, mCitaFi] = tCitaFin.split(':').map(Number);
       const minCitaI = hCitaIn * 60 + mCitaIn;
       const minCitaF = hCitaFi * 60 + mCitaFi;
+
       if (minIniN < minCitaF && minFinN > minCitaI) {
-        if ((cita.extendedProps?.personalInvolucrado || []).includes(pers)) return false;
+        if ((cita.extendedProps?.personalInvolucrado || []).includes(pers)) {
+          console.log(`❌ CONFLICTO detectado con cita ID ${cita.id} (${cita.extendedProps.paciente})`);
+          return false;
+        }
       }
     }
     return true; 
@@ -176,13 +175,11 @@ function App() {
       setUsuarioLogueado(user);
       setComprobandoSesion(false);
     };
-
     verificarSesionInicial();
 
     const { subscription } = apiAuth.onEstadoSesionCambia((user) => {
       setUsuarioLogueado(user);
     });
-
     return () => {
       if (subscription) subscription.unsubscribe();
     };
@@ -209,7 +206,6 @@ function App() {
         if (personalDB && personalDB.length > 0) {
           const plantillaInyectada = personalDB.map(emp => {
             const coincidenciaInicial = PERSONAL_INICIAL_OBJ.find(p => p.nombre.toLowerCase() === emp.nombre.toLowerCase());
-            
             const rolDefinitivo = emp.rol || emp.role || coincidenciaInicial?.rol || 'Especialista';
             const apellidoDefinitivo = emp.apellido !== undefined ? emp.apellido : (emp.apellidos || coincidenciaInicial?.apellido || '');
             const colorDefinitivo = emp.color || coincidenciaInicial?.color || '#64748b';
@@ -220,9 +216,7 @@ function App() {
               role: rolDefinitivo,
               apellido: apellidoDefinitivo,
               color: colorDefinitivo,
-              horario: emp.horario && Object.keys(emp.horario).length > 0 
-                ? emp.horario 
-                : (coincidenciaInicial?.horario || HORARIO_POR_DEFECTO)
+              horario: emp.horario && Object.keys(emp.horario).length > 0 ? emp.horario : (coincidenciaInicial?.horario || HORARIO_POR_DEFECTO)
             };
           });
           setPersonalList(plantillaInyectada);
@@ -231,7 +225,6 @@ function App() {
         }
       } catch (err) {
         console.error('Error al descargar datos de la API:', err);
-        setError('❌ Error de conexión: No se pudieron sincronizar los datos.');
       } finally {
         setLoading(false);
       }
@@ -242,7 +235,6 @@ function App() {
   const handleCerrarSesionReal = async () => {
     const seguro = window.confirm("¿Seguro que deseas salir del panel clínico?");
     if (!seguro) return;
-
     try {
       await apiAuth.logout();
       setUsuarioLogueado(null);
@@ -292,15 +284,9 @@ function App() {
         ...registroActualizado,
         rol: registroActualizado.rol || registroActualizado.role || 'Especialista',
         role: registroActualizado.rol || registroActualizado.role || 'Especialista',
-        apellido: registroActualizado.apellido !== undefined ? registroActualizado.apellido : (registroActualizado.apellidos || '')
+        apellido: registroActualizado.apellido !== undefined ? registroInsertado.apellido : (registroActualizado.apellidos || '')
       };
-
       setPersonalList(personalList.map(emp => emp.id === id ? normalizado : emp));
-      
-      const actual = personalList.find(e => e.id === id);
-      if (actual && principal === `${actual.nombre} ${actual.apellido || ''}`.trim()) {
-        setPrincipal(`${normalizado.nombre} ${normalizado.apellido || ''}`.trim());
-      }
     } catch (err) {
       alert('❌ Error al actualizar los datos en Supabase.');
     }
@@ -334,12 +320,11 @@ function App() {
     if (!citaOriginal) return;
 
     const [fechaCita] = citaOriginal.start.split('T');
-    
     const nuevoPrincipal = datosActualizados.principal || citaOriginal.extendedProps.principal;
     const nuevoAsistente = datosActualizados.asistente || citaOriginal.extendedProps.asistente;
-    const nuevoTratamientoKey = datosActualizados.tratamientoKey || citaOriginal.extendedProps.tratamientoKey;
+    const nuevoTratamientoKey = datosActualizados.treatmentKey || citaOriginal.extendedProps.tratamientoKey;
     const nuevoPaciente = datosActualizados.paciente !== undefined ? datosActualizados.paciente : citaOriginal.extendedProps.paciente;
-    const nuevasObservaciones = datosActualizados.notes !== undefined ? datosActualizados.notes : (datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : citaOriginal.extendedProps.notes || citaOriginal.extendedProps.observaciones);
+    const nuevasObservaciones = datosActualizados.observaciones || citaOriginal.extendedProps.observaciones || '';
     
     let nuevoStart = datosActualizados.start || citaOriginal.start;
     let nuevoEnd = datosActualizados.end;
@@ -353,11 +338,7 @@ function App() {
     }
 
     if (!comprobarDisponibilidad(fechaCita, nuevoStart.split('T')[1].slice(0, 5), nuevoEnd.split('T')[1].slice(0, 5), nuevoPrincipal, id)) {
-      alert(`❌ Operación denegada: ${nuevoPrincipal} está de vacaciones o no disponible en este rango.`);
-      return;
-    }
-    if (nuevoAsistente !== 'Ninguno' && !comprobarDisponibilidad(fechaCita, nuevoStart.split('T')[1].slice(0, 5), nuevoEnd.split('T')[1].slice(0, 5), nuevoAsistente, id)) {
-      alert(`❌ Operación denegada: El asistente está de vacaciones o no disponible en este rango.`);
+      alert(`❌ Operación denegada: Horario no disponible para el especialista.`);
       return;
     }
 
@@ -365,23 +346,11 @@ function App() {
     if (nuevoAsistente !== 'Ninguno') equipo.push(nuevoAsistente);
 
     const dummyFinObj = new Date(nuevoEnd);
-    const { backgroundColor, title } = calcularMetadatosCita(
-      fechaCita,
-      nuevoStart.split('T')[1].slice(0, 5),
-      nuevoPrincipal,
-      nuevoAsistente,
-      nuevoTratamientoKey,
-      dummyFinObj,
-      nuevoPaciente
-    );
+    const { backgroundColor, title } = calcularMetadatosCita(fechaCita, nuevoStart.split('T')[1].slice(0, 5), nuevoPrincipal, nuevoAsistente, nuevoTratamientoKey, dummyFinObj, nuevoPaciente);
 
     const citaActualizadaEstructura = {
       title, start: nuevoStart, end: nuevoEnd, backgroundColor,
-      extendedProps: { 
-        personalInvolucrado: equipo, tratamientoKey: nuevoTratamientoKey, 
-        principal: nuevoPrincipal, asistente: nuevoAsistente,
-        paciente: nuevoPaciente, notas: nuevasObservaciones
-      }
+      extendedProps: { personalInvolucrado: equipo, tratamientoKey: nuevoTratamientoKey, principal: nuevoPrincipal, asistente: nuevoAsistente, paciente: nuevoPaciente, observaciones: nuevasObservaciones }
     };
 
     try {
@@ -389,113 +358,55 @@ function App() {
       setCitas(citas.map(cita => String(cita.id) === String(id) ? { ...registroActualizado, id: String(registroActualizado.id) } : cita));
       setCitaSeleccionada(null);
     } catch (err) {
-      alert('No se pudieron guardar los cambios: ' + (err.message || ''));
+      alert('No se pudieron guardar los cambios en la base de datos.');
     }
   };
 
   const handleEliminarCita = async (id) => {
-    const seguro = window.confirm("⚠️ ¿Estás seguro de que deseas eliminar esta cita de forma permanente?");
+    const seguro = window.confirm("⚠️ ¿Estás seguro de que deseas eliminar esta cita?");
     if (!seguro) return;
-
     try {
       await apiCitas.delete(id);
       setCitas(prevCitas => prevCitas.filter(cita => String(cita.id) !== String(id)));
       setCitaSeleccionada(null);
     } catch (err) {
-      console.error(err);
-      alert('No se pudo eliminar la cita de la base de datos.');
+      alert('No se pudo eliminar la cita.');
     }
   };
 
-  useEffect(() => {
-    if (principal && principal === asistente) setAsistente('Ninguno');
-  }, [principal]);
-
-  useEffect(() => {
-    setAdvertencia('');
-    if (!principal) return;
-
-    const infoTratamiento = DURACION_TRATAMIENTOS[tratamiento];
-    const dummy = new Date(`${fecha}T${hora}:00`);
+  const handleCrearCitaDesdeFormulario = async (datos) => {
+    const infoTratamiento = DURACION_TRATAMIENTOS[datos.tratamiento]; 
+    const dummy = new Date(`${datos.fecha}T${datos.hora}:00`);
     const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
-    const horaFinStr = finId.toTimeString().slice(0, 5);
-
-    const coincidenciaVacaciones = vacaciones.some(v => {
-      const nombreTrabajador = `${v.nombre_empleado}`.toLowerCase();
-      const principalMinus = principal.toLowerCase();
-      if (!principalMinus.includes(nombreTrabajador)) return false;
-      return fecha >= v.fecha_inicio && fecha <= v.fecha_fin;
-    });
-
-    if (coincidenciaVacaciones) {
-      setAdvertencia(`🚨 ¡ATENCIÓN! ${principal} tiene VACACIONES registradas en esta fecha.`);
-      return;
-    }
-
-    const empData = personalList.find(p => `${p.nombre} ${p.apellido || ''}`.trim() === principal);
-    const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
-    
-    const diaSemanaNombre = TRADUCTOR_DIAS[dummy.getDay()];
-    const reglaDia = cuadrante[diaSemanaNombre];
-
-    if (!reglaDia || !reglaDia.trabaja) {
-      setAdvertencia(`⚠️ ¡Aviso! El ${diaSemanaNombre} figura como día NO laborable para ${principal}.`);
-      return;
-    }
-
-    const [hIn, mIn] = hora.split(':').map(Number);
-    const [hFi, mFi] = horaFinStr.split(':').map(Number);
-    const [hLimIn, mLimIn] = reglaDia.inicio.split(':').map(Number);
-    const [hLimFi, mLimFi] = reglaDia.fin.split(':').map(Number);
-
-    const minCitaInicio = hIn * 60 + mIn;
-    const minCitaFin = hFi * 60 + mFi;
-    const minTurnoInicio = hLimIn * 60 + mLimIn;
-    const minTurnoFin = hLimFi * 60 + mLimFi;
-
-    if (minCitaInicio < minTurnoInicio || minCitaFin > minTurnoFin) {
-      setAdvertencia(`⚠️ ¡Fuera de Turno! ${principal} trabaja de ${reglaDia.inicio}h a ${reglaDia.fin}h los ${diaSemanaNombre}s.`);
-    }
-  }, [hora, tratamiento, principal, fecha, personalList, vacaciones]);
-
-  const handleCrearCita = async (e) => {
-    e.preventDefault();
-    setError('');
-    
-    if (!principal || principal === "") {
-      return setError('⚠️ Error: Selecciona un Especialista Principal de la lista.');
-    }
-    
-    const infoTratamiento = DURACION_TRATAMIENTOS[tratamiento]; 
-    const dummy = new Date(`${fecha}T${hora}:00`);
-    const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
-    const hIniT = hora.slice(0, 5);
+    const hIniT = datos.hora.slice(0, 5);
     const hFinT = `${String(finId.getHours()).padStart(2, '0')}:${String(finId.getMinutes()).padStart(2, '0')}`;
     
-    if (!comprobarDisponibilidad(fecha, hIniT, hFinT, principal)) {
-      return setError(`❌ Bloqueo por Vacaciones o Conflicto: Horario no disponible para ${principal}.`);
+    if (!comprobarDisponibilidad(datos.fecha, hIniT, hFinT, datos.principal)) {
+      alert(`❌ Bloqueo por Vacaciones o Conflicto: Horario no disponible para ${datos.principal}.`);
+      return false;
     }
-    if (asistente !== 'Ninguno' && !comprobarDisponibilidad(fecha, hIniT, hFinT, asistente)) {
-      return setError(`❌ Bloqueo por Vacaciones o Conflicto: Horario no disponible para el Asistente.`);
+    if (datos.asistente !== 'Ninguno' && !comprobarDisponibilidad(datos.fecha, hIniT, hFinT, datos.asistente)) {
+      alert(`❌ Bloqueo por Vacaciones o Conflicto: Horario no disponible para el Asistente.`);
+      return false;
     }
 
-    const equipo = [principal]; 
-    if (asistente !== 'Ninguno') equipo.push(asistente);
+    const equipo = [datos.principal]; 
+    if (datos.asistente !== 'Ninguno') equipo.push(datos.asistente);
     
-    const { backgroundColor, title, pacienteLimpio } = calcularMetadatosCita(fecha, hIniT, principal, asistente, tratamiento, finId, paciente);
+    const { backgroundColor, title, pacienteLimpio } = calcularMetadatosCita(datos.fecha, hIniT, datos.principal, datos.asistente, datos.tratamiento, finId, datos.paciente);
     
     const nuevaCita = {
-      title, start: `${fecha}T${hIniT}:00`, end: `${fecha}T${hFinT}:00`, backgroundColor, estado: 'Pendiente',
-      extendedProps: { personalInvolucrado: equipo, tratamientoKey: tratamiento, principal, asistente, paciente: pacienteLimpio, notas: observaciones.trim() }
+      title, start: `${datos.fecha}T${hIniT}:00`, end: `${datos.fecha}T${hFinT}:00`, backgroundColor, estado: 'Pendiente',
+      extendedProps: { personalInvolucrado: equipo, tratamientoKey: datos.tratamiento, principal: datos.principal, asistente: datos.asistente, paciente: pacienteLimpio, observaciones: datos.observaciones.trim() }
     };
     
     try {
       const registroInsertado = await apiCitas.insert(nuevaCita);
       setCitas([...citas, { ...registroInsertado, id: String(registroInsertado.id) }]);
-      setPaciente(''); setObservaciones('');
-      setPrincipal(''); 
+      return true;
     } catch (err) { 
-      setError('❌ Error en la nube al guardar la cita.'); 
+      alert('❌ Error en la nube al guardar la cita.'); 
+      return false;
     }
   };
 
@@ -514,7 +425,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      {/* 🌟 INTEGRACIÓN DE LA CABECERA MODULAR */}
       <Header 
         vistaActual={vistaActual}
         setVistaActual={setVistaActual}
@@ -533,16 +443,15 @@ function App() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
             <div className="lg:col-span-1 hide-on-print">
               <Formulario
-                fecha={fecha} setFecha={setFecha} hora={hora} setHora={setHora}
-                tratamiento={tratamiento} setTratamiento={setTratamiento} principal={principal} setPrincipal={setPrincipal}
-                asistente={asistente} setAsistente={setAsistente} paciente={paciente} setPaciente={setPaciente}
-                observaciones={observaciones} setObservaciones={setObservaciones} error={error} advertencia={advertencia}
-                handleCrearCita={handleCrearCita} personalList={personalList} 
+                fechaInicial={fechaFijaPrueba}
+                personalList={personalList}
+                vacaciones={vacaciones}
+                onCrearCita={handleCrearCitaDesdeFormulario}
               />
             </div>
             <div className="lg:col-span-3">
               <Calendario
-                citas={citas} fechaActual={fecha} personalList={personalList} 
+                citas={citas} fechaActual={fechaFijaPrueba} personalList={personalList} 
                 comprobarDisponibilidad={(ini, fin, pers, idEx) => {
                   return comprobarDisponibilidad(ini.toISOString().split('T')[0], ini.toTimeString().slice(0, 5), fin.toTimeString().slice(0, 5), pers, idEx);
                 }}
@@ -552,35 +461,26 @@ function App() {
               />
             </div>
           </div>
-        ) : vistaActual === 'estadisticas' ? (
-          <Estadisticas citas={citas} personalList={personalList} />
-        ) : vistaActual === 'personal' ? (
-          <GestionPersonal 
-            personal={personalList}
-            onAdd={handleAddPersonal}
-            onUpdate={handleUpdatePersonal}
-            onDelete={handleDelPersonal}
-            onVolver={() => setVistaActual('calendario')}
-          />
-        ) : vistaActual === 'vacaciones' ? (
-          <GestionVacaciones
-            personal={personalList}
-            vacaciones={vacaciones}
-            onAdd={handleAddVacacion}
-            onDelete={handleDelVacacion}
-            onVolver={() => setVistaActual('calendario')}
-          />
         ) : (
-          <GestionPacientes 
+          <VistaAdministracion 
+            vistaActual={vistaActual}
+            citas={citas}
+            personalList={personalList}
+            vacaciones={vacaciones}
             pacientes={pacientes}
+            onAddPersonal={handleAddPersonal}
+            onUpdatePersonal={handleUpdatePersonal}
+            onDeletePersonal={handleDelPersonal}
+            onAddVacacion={handleAddVacacion}
+            onDeleteVacacion={handleDelVacacion}
             onAddPaciente={handleAddPaciente}
             onUpdatePaciente={handleUpdatePaciente}
             onDeletePaciente={handleDelPaciente}
+            onVolver={() => setVistaActual('calendario')}
           />
         )
       )}
 
-      {/* MODAL CAMBIO DE CONTRASEÑA */}
       {modalPasswordAbierto && (
         <CambioPasswordModal 
           usuarioLogueado={usuarioLogueado} 

@@ -37,8 +37,7 @@ function Calendario({
       setEditTratamiento(props.tratamientoKey || 'revision');
       setEditPrincipal(props.principal || '');
       setEditAsistente(props.asistente || 'Ninguno');
-      // LEER CON CONSISTENCIA: Busca 'notas' o la propiedad residual 'observaciones'
-      setEditObservaciones(props.notas || props.observaciones || ''); 
+      setEditObservaciones(props.observaciones || ''); 
       setErrorModal('');
     }
   }, [citaSeleccionada]);
@@ -93,6 +92,7 @@ function Calendario({
     const dummyInicio = new Date(`${fechaDia}T${editHora}:00`);
     const dummyFin = new Date(dummyInicio.getTime() + infoTratamiento.minutos * 60000);
 
+    // Validación usando los parámetros que App.jsx espera
     if (!comprobarDisponibilidad(dummyInicio, dummyFin, editPrincipal, citaSeleccionada.id)) {
       setErrorModal(`❌ Conflicto: ${editPrincipal} ya está ocupada en ese horario.`);
       return;
@@ -103,14 +103,13 @@ function Calendario({
       return;
     }
 
-    // MANDAR CON CONSISTENCIA: Guardamos bajo la clave oficial 'notas'
     handleActualizarCita(citaSeleccionada.id, {
       horaInicioManual: editHora,
       treatmentKey: editTratamiento,
       principal: editPrincipal,
       asistente: editAsistente,
       paciente: editPaciente,
-      notas: editObservaciones.trim()
+      observaciones: editObservaciones.trim()
     });
   };
 
@@ -205,7 +204,6 @@ function Calendario({
         }
       `}</style>
 
-      {/* BARRA SUPERIOR DE FILTROS E IMPRESIÓN */}
       <div className="mb-4 bg-slate-100 p-2 rounded-xl flex flex-wrap gap-2 items-center justify-between hide-on-print">
         <div className="flex flex-wrap gap-2 items-center">
           <span className="text-xs font-bold text-slate-500 uppercase px-2">Filtrar:</span>
@@ -246,7 +244,6 @@ function Calendario({
         </button>
       </div>
 
-      {/* CONTENEDOR DEL CALENDARIO EN PANTALLA */}
       <div className="hide-on-print">
         <FullCalendar
           plugins={[timeGridPlugin, interactionPlugin]}
@@ -275,7 +272,6 @@ function Calendario({
         />
       </div>
 
-      {/* VISTA IMPRESA */}
       <div id="print-sheet">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid black', paddingBottom: '10px' }}>
           <div>
@@ -300,7 +296,7 @@ function Calendario({
                 <th style={{ width: '18%' }}>Tratamiento</th>
                 <th style={{ width: '12%' }}>Principal</th>
                 <th style={{ width: '12%' }}>Asistente</th>
-                <th style={{ width: '23%' }}>Notas</th>
+                <th style={{ width: '23%' }}>Observaciones</th>
               </tr>
             </thead>
             <tbody>
@@ -316,7 +312,7 @@ function Calendario({
                     <td>{infoT ? infoT.nombre : 'Revisión'}</td>
                     <td>{cita.extendedProps.principal}</td>
                     <td>{cita.extendedProps.asistente === 'Ninguno' ? '-' : cita.extendedProps.asistente}</td>
-                    <td><span style={{ fontSize: '11px', fontStyle: 'italic' }}>{cita.extendedProps.notas || cita.extendedProps.observaciones || '-'}</span></td>
+                    <td><span style={{ fontSize: '11px', fontStyle: 'italic' }}>{cita.extendedProps.observaciones || '-'}</span></td>
                   </tr>
                 );
               })}
@@ -325,7 +321,6 @@ function Calendario({
         )}
       </div>
 
-      {/* MODAL DE EDICIÓN FLOTANTE */}
       {citaSeleccionada && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 hide-on-print">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full border border-slate-300 overflow-hidden">
@@ -375,7 +370,7 @@ function Calendario({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Notas de la Cita</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Observaciones de la Cita</label>
                 <textarea 
                   value={editObservaciones} 
                   onChange={(e) => setEditObservaciones(e.target.value)} 

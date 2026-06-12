@@ -24,7 +24,7 @@ function Estadisticas({ citas = [], personalList = [] }) {
   // 2. 🧠 PROCESAMIENTO AVANZADO: Contabilizar roles de Principal y Asistente (Adaptado a Array de Objetos)
   const datosEspecialistas = personalList.map(p => {
     // Reconstruimos el nombre completo idéntico a cómo se guarda en las citas
-    const nombreCompleto = `${p.nombre} ${p.apellidos}`.trim();
+    const nombreCompleto = `${p.nombre} ${p.apellido}`.trim();
 
     // Filtrar cuando es el encargado principal
     const comoPrincipal = citasDelMes.filter(c => c.extendedProps?.principal === nombreCompleto);

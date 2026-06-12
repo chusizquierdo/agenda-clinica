@@ -1,191 +1,247 @@
 // src/components/Formulario.jsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { DURACION_TRATAMIENTOS } from '../data/config';
 
-function Formulario({
-  fecha, setFecha,
-  hora, setHora,
-  tratamiento, setTratamiento,
-  principal, setPrincipal,
-  asistente, setAsistente,
-  paciente, setPaciente,
-  observaciones, setObservaciones,
-  error,
-  advertencia,
-  handleCrearCita,
-  personalList = [] 
-}) {
+const HORARIO_POR_DEFECTO = {
+  lunes: { trabaja: true, inicio: '09:00', fin: '19:00' },
+  martes: { trabaja: true, inicio: '09:00', fin: '19:00' },
+  miercoles: { trabaja: true, inicio: '09:00', fin: '19:00' },
+  jueves: { trabaja: true, inicio: '09:00', fin: '19:00' },
+  viernes: { trabaja: true, inicio: '09:00', fin: '19:00' }
+};
 
-  // Filtro definitivo para Especialistas (ahora tolera 'medico' y 'médico')
-  const especialistas = personalList.filter(p => {
-    const r = (p.rol || p.role || '').toLowerCase().trim();
-    return (
-      r === 'especialista' || 
-      r === 'odontólogo' || 
-      r === 'odontologo' || 
-      r === 'doctora' || 
-      r === 'doctor' ||
-      r === 'odontóloga' ||
-      r === 'odontologa' ||
-      r === 'medico' ||
-      r === 'médico'
-    );
-  });
+const TRADUCTOR_DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
 
-  // Filtro definitivo para Asistentes y Enfermería
-  const asistentesYHigienistas = personalList.filter(p => {
-    const r = (p.rol || p.role || '').toLowerCase().trim();
-    return (
-      r === 'asistente' || 
-      r === 'higienista' || 
-      r === 'enfermera' || 
-      r === 'enfermero' ||
-      r === 'asistenta'
-    );
-  });
+function Formulario({ fechaInicial, personalList, vacaciones, onCrearCita }) {
+  // Estados locales encapsulados dentro del formulario
+  const [paciente, setPaciente] = useState('');
+  const [fecha, setFecha] = useState(fechaInicial);
+  const [hora, setHora] = useState('09:00');
+  const [tratamiento, setTratamiento] = useState('revision');
+  const [principal, setPrincipal] = useState('');
+  const [asistente, setAsistente] = useState('Ninguno');
+  const [observaciones, setObservaciones] = useState('');
+  const [errorLocal, setErrorLocal] = useState('');
+  const [advertencia, setAdvertencia] = useState('');
+  const [enviando, setEnviando] = useState(false);
 
-  const controlarCambioFecha = (e) => {
-    const fechaSeleccionada = e.target.value;
-    if (!fechaSeleccionada) return;
+  // Regla de negocio: El principal no puede ser igual al asistente
+  useEffect(() => {
+    if (principal && principal === asistente) {
+      setAsistente('Ninguno');
+    }
+  }, [principal, asistente]);
 
-    const partes = fechaSeleccionada.split('-');
-    const objetoFecha = new Date(partes[0], partes[1] - 1, partes[2]);
-    const diaDeLaSemana = objetoFecha.getDay();
+  // Validación de turnos y vacaciones en tiempo real
+  useEffect(() => {
+    setAdvertencia('');
+    if (!principal) return;
 
-    if (diaDeLaSemana === 0 || diaDeLaSemana === 6) {
-      alert('⚠️ Fines de semana cerrados. Por favor, selecciona una fecha de Lunes a Viernes.');
-      
-      const hoy = new Date();
-      const diaHoy = hoy.getDay();
-      if (diaHoy === 6) hoy.setDate(hoy.getDate() + 2);
-      if (diaHoy === 0) hoy.setDate(hoy.getDate() + 1);
-      
-      setFecha(`${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`);
-    } else {
-      setFecha(fechaSeleccionada);
+    const infoTratamiento = DURACION_TRATAMIENTOS[tratamiento];
+    const dummy = new Date(`${fecha}T${hora}:00`);
+    const finId = new Date(dummy.getTime() + infoTratamiento.minutos * 60000);
+    const horaFinStr = finId.toTimeString().slice(0, 5);
+
+    // 1. Comprobación de vacaciones
+    const coincidenciaVacaciones = vacaciones.some(v => {
+      const nombreTrabajador = `${v.nombre_empleado}`.toLowerCase();
+      const principalMinus = principal.toLowerCase();
+      if (!principalMinus.includes(nombreTrabajador)) return false;
+      return fecha >= v.fecha_inicio && fecha <= v.fecha_fin;
+    });
+
+    if (coincidenciaVacaciones) {
+      setAdvertencia(`🚨 ¡ATENCIÓN! ${principal} tiene VACACIONES registradas en esta fecha.`);
+      return;
+    }
+
+    // 2. Comprobación de cuadrante y turnos
+    const empData = personalList.find(p => `${p.nombre} ${p.apellido || ''}`.trim() === principal);
+    const cuadrante = empData?.horario && Object.keys(empData.horario).length > 0 ? empData.horario : HORARIO_POR_DEFECTO;
+    
+    const diaSemanaNombre = TRADUCTOR_DIAS[dummy.getDay()];
+    const reglaDia = cuadrante[diaSemanaNombre];
+
+    if (!reglaDia || !reglaDia.works && !reglaDia.trabaja) {
+      setAdvertencia(`⚠️ ¡Aviso! El ${diaSemanaNombre} figura como día NO laborable para ${principal}.`);
+      return;
+    }
+
+    const [hIn, mIn] = hora.split(':').map(Number);
+    const [hFi, mFi] = horaFinStr.split(':').map(Number);
+    const [hLimIn, mLimIn] = (reglaDia.inicio || '09:00').split(':').map(Number);
+    const [hLimFi, mLimFi] = (reglaDia.fin || '19:00').split(':').map(Number);
+
+    const minCitaInicio = hIn * 60 + mIn;
+    const minCitaFin = hFi * 60 + mFi;
+    const minTurnoInicio = hLimIn * 60 + mLimIn;
+    const minTurnoFin = hLimFi * 60 + mLimFi;
+
+    if (minCitaInicio < minTurnoInicio || minCitaFin > minTurnoFin) {
+      setAdvertencia(`⚠️ ¡Fuera de Turno! ${principal} trabaja de ${reglaDia.inicio}h a ${reglaDia.fin}h los ${diaSemanaNombre}s.`);
+    }
+  }, [hora, tratamiento, principal, fecha, personalList, vacaciones]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorLocal('');
+
+    if (!principal || principal === "") {
+      return setErrorLocal('⚠️ Error: Selecciona un Especialista Principal de la lista.');
+    }
+
+    setEnviando(true);
+
+    // Mandamos los datos estructurados al componente padre (App.jsx)
+    const exito = await onCrearCita({
+      paciente,
+      fecha,
+      hora,
+      tratamiento,
+      principal,
+      asistente,
+      observaciones
+    });
+
+    setEnviando(false);
+
+    if (exito) {
+      // Limpiamos el formulario tras la creación exitosa
+      setPaciente('');
+      setObservaciones('');
+      setPrincipal('');
     }
   };
 
   return (
-    <form onSubmit={handleCrearCita} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-      <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide border-b border-slate-100 pb-2">
-        🗓️ Programar Nueva Cita
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+      <h2 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+        📅 Agendar Nueva Cita
       </h2>
 
-      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-xs font-semibold">{error}</div>}
-      {advertencia && <div className="p-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-xs">{advertencia}</div>}
-
-      {/* Paciente */}
-      <div>
-        <label className="block text-xs font-bold text-slate-600 mb-1">Nombre del Paciente</label>
-        <input
-          type="text"
-          required
-          value={paciente}
-          onChange={(e) => setPaciente(e.target.value)}
-          placeholder="Ej: Juan Pérez Gómez"
-          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        />
-      </div>
-
-      {/* Fecha y Hora */}
-      <div className="grid grid-cols-2 gap-3">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">Fecha</label>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Paciente</label>
           <input
-            type="date"
+            type="text"
             required
-            value={fecha}
-            onChange={controlarCambioFecha}
-            className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+            placeholder="Nombre completo del paciente"
+            value={paciente}
+            onChange={(e) => setPaciente(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
         </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha</label>
+            <input
+              type="date"
+              required
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Hora Inicio</label>
+            <input
+              type="time"
+              required
+              value={hora}
+              onChange={(e) => setHora(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+          </div>
+        </div>
+
         <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">Hora de Inicio</label>
-          <input
-            type="time"
-            required
-            value={hora}
-            onChange={(e) => setHora(e.target.value)}
-            className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tratamiento</label>
+          <select
+            value={tratamiento}
+            onChange={(e) => setTratamiento(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+            {Object.entries(DURACION_TRATAMIENTOS).map(([key, value]) => (
+              <option key={key} value={key}>
+                {value.nombre} ({value.minutos} min)
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Especialista Principal</label>
+          <select
+            value={principal}
+            onChange={(e) => setPrincipal(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+            <option value="">-- Selecciona Especialista --</option>
+            {personalList.map((p) => {
+              const nombreCompleto = `${p.nombre} ${p.apellido || ''}`.trim();
+              return (
+                <option key={p.id} value={nombreCompleto}>
+                  {p.rol === 'Asistente' ? '👩‍⚕️' : '🩺'} {nombreCompleto} ({p.rol || 'Especialista'})
+                </option>
+              );
+            })}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Asistente (Opcional)</label>
+          <select
+            value={asistente}
+            onChange={(e) => setAsistente(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+            <option value="Ninguno">Ninguno (Sin Asistente)</option>
+            {personalList
+              .filter(p => `${p.nombre} ${p.apellido || ''}`.trim() !== principal)
+              .map((p) => {
+                const nombreCompleto = `${p.nombre} ${p.apellido || ''}`.trim();
+                return (
+                  <option key={p.id} value={nombreCompleto}>
+                    👤 {nombreCompleto}
+                  </option>
+                );
+              })}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Notas / Observaciones</label>
+          <textarea
+            rows="2"
+            placeholder="Detalles clínicos o notas adicionales..."
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
           />
         </div>
-      </div>
 
-      {/* Tratamiento */}
-      <div>
-        <label className="block text-xs font-bold text-slate-600 mb-1">Tratamiento / Servicio</label>
-        <select
-          value={tratamiento}
-          onChange={(e) => setTratamiento(e.target.value)}
-          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+        {advertencia && (
+          <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-[11px] font-medium leading-relaxed">
+            {advertencia}
+          </div>
+        )}
+
+        {errorLocal && (
+          <div className="p-2.5 bg-red-50 border border-red-200 text-red-800 rounded-xl text-[11px] font-medium">
+            {errorLocal}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={enviando}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-sm"
         >
-          {Object.entries(DURACION_TRATAMIENTOS).map(([key, info]) => (
-            <option key={key} value={key}>{info.nombre} ({info.minutos} min)</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Especialista Principal */}
-      <div>
-        <label className="block text-xs font-bold text-slate-600 mb-1">Especialista Principal</label>
-        <select
-          value={principal}
-          onChange={(e) => setPrincipal(e.target.value)}
-          required
-          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        >
-          <option value="">-- Selecciona un Especialista --</option>
-          {especialistas.map(esp => {
-            const nombreCompleto = `${esp.nombre} ${esp.apellido || ''}`.trim();
-            return (
-              <option key={esp.id} value={nombreCompleto}>
-                {nombreCompleto} ({esp.rol || esp.role || 'Especialista'})
-              </option>
-            );
-          })}
-        </select>
-      </div>
-
-      {/* Asistente / Gabinete */}
-      <div>
-        <label className="block text-xs font-bold text-slate-600 mb-1">Asistente Asignado (Opcional)</label>
-        <select
-          value={asistente}
-          onChange={(e) => setAsistente(e.target.value)}
-          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-        >
-          <option value="Ninguno">Ninguno</option>
-          {asistentesYHigienistas.map(asi => {
-            const nombreCompleto = `${asi.nombre} ${asi.apellido || ''}`.trim();
-            return (
-              <option key={asi.id} value={nombreCompleto} disabled={nombreCompleto === principal}>
-                {nombreCompleto} ({asi.rol || asi.role || 'Asistente'})
-              </option>
-            );
-          })}
-        </select>
-      </div>
-
-      {/* Observaciones */}
-      <div>
-        <label className="block text-xs font-bold text-slate-600 mb-1">Notas / Observaciones Médicas</label>
-        <textarea
-          value={observaciones}
-          onChange={(e) => setObservaciones(e.target.value)}
-          placeholder="Alergias, especificaciones del estado o del historial..."
-          rows="2"
-          className="w-full p-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none resize-none"
-        />
-      </div>
-
-      <button
-        type="submit"
-        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-sm transition-all uppercase tracking-wider"
-      >
-        Añadir Cita al Calendario
-      </button>
-    </form>
+          {enviando ? 'Guardando...' : 'Agendar Cita'}
+        </button>
+      </form>
+    </div>
   );
 }
 
