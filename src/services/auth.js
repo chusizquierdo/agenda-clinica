@@ -53,5 +53,17 @@ export const apiAuth = {
       callback(session?.user || null);
     });
     return subscription;
+  },
+
+  /**
+   * Actualiza de forma segura la contraseña del usuario conectado actualmente
+   * @param {string} nuevaPassword 
+   */
+  async updatePassword(nuevaPassword) {
+    const { data, error } = await supabase.auth.updateUser({
+      password: nuevaPassword.trim()
+    });
+    if (error) throw error;
+    return data.user;
   }
 };

@@ -7,15 +7,12 @@ import Estadisticas from './components/Estadisticas';
 import GestionPersonal from './components/GestionPersonal'; 
 import GestionPacientes from './components/GestionPacientes'; 
 import GestionVacaciones from './components/GestionVacaciones';
-import Calculadora from './components/Calculadora'; 
-import RelojDigital from './components/RelojDigital'; 
+import CambioPasswordModal from './components/CambioPasswordModal';
+import Header from './components/Header'; // 🌟 IMPORTADO EL NUEVO COMPONENTE
 import Login from './components/Login';
 import { apiAuth } from './services/auth';
 import { apiVacaciones } from './services/vacaciones';
-import { BarChart3, ArrowLeft, Users, UserCircle, LogOut, CalendarDays } from 'lucide-react';
 import { apiCitas, apiPersonal, apiPacientes } from './services/api'; 
-
-import logoClinica from './assets/logo.avif';
 
 const PERSONAL_INICIAL_OBJ = [
   { 
@@ -54,8 +51,8 @@ const PERSONAL_INICIAL_OBJ = [
     color: '#10b981',
     horario: {
       lunes: { trabaja: true, inicio: '09:00', fin: '19:00' },
-      martes: { trabaja: true, inicio: '09:00', fin: '19:00' },
-      miercoles: { trabaja: true, inicio: '09:00', fin: '19:00' }, // 🌟 CORREGIDO: 'fin' en lugar de 'py'
+      martes: { trabaja: true, inicio: '09:00', font: '19:00' },
+      miercoles: { trabaja: true, inicio: '09:00', fin: '19:00' }, 
       jueves: { trabaja: true, inicio: '09:00', fin: '19:00' },
       viernes: { trabaja: true, inicio: '09:00', fin: '19:00' }
     }
@@ -85,6 +82,7 @@ function App() {
   
   const [usuarioLogueado, setUsuarioLogueado] = useState(null);
   const [comprobandoSesion, setComprobandoSesion] = useState(true);
+  const [modalPasswordAbierto, setModalPasswordAbierto] = useState(false);
 
   const [citas, setCitas] = useState([]);
   const [personalList, setPersonalList] = useState([]); 
@@ -212,7 +210,6 @@ function App() {
           const plantillaInyectada = personalDB.map(emp => {
             const coincidenciaInicial = PERSONAL_INICIAL_OBJ.find(p => p.nombre.toLowerCase() === emp.nombre.toLowerCase());
             
-            // NORMALIZACIÓN DEFENSIVA: Nos aseguramos de unificar rol/role, apellido y colores base
             const rolDefinitivo = emp.rol || emp.role || coincidenciaInicial?.rol || 'Especialista';
             const apellidoDefinitivo = emp.apellido !== undefined ? emp.apellido : (emp.apellidos || coincidenciaInicial?.apellido || '');
             const colorDefinitivo = emp.color || coincidenciaInicial?.color || '#64748b';
@@ -276,7 +273,6 @@ function App() {
   const handleAddPersonal = async (nuevoTrabajador) => {
     try {
       const registroInsertado = await apiPersonal.insert(nuevoTrabajador);
-      // Asegurar que el nuevo registro conserve las claves normalizadas en el estado local
       const normalizado = {
         ...registroInsertado,
         rol: registroInsertado.rol || registroInsertado.role || 'Especialista',
@@ -343,7 +339,7 @@ function App() {
     const nuevoAsistente = datosActualizados.asistente || citaOriginal.extendedProps.asistente;
     const nuevoTratamientoKey = datosActualizados.tratamientoKey || citaOriginal.extendedProps.tratamientoKey;
     const nuevoPaciente = datosActualizados.paciente !== undefined ? datosActualizados.paciente : citaOriginal.extendedProps.paciente;
-    const nuevasObservaciones = datosActualizados.notas !== undefined ? datosActualizados.notas : (datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : citaOriginal.extendedProps.notas || citaOriginal.extendedProps.observaciones);
+    const nuevasObservaciones = datosActualizados.notes !== undefined ? datosActualizados.notes : (datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : citaOriginal.extendedProps.notes || citaOriginal.extendedProps.observaciones);
     
     let nuevoStart = datosActualizados.start || citaOriginal.start;
     let nuevoEnd = datosActualizados.end;
@@ -518,59 +514,14 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <header className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4 hide-on-print">
-        <div className="flex items-center gap-3">
-          <img src={logoClinica} alt="Logo" className="h-12 w-auto object-contain select-none" />
-          <RelojDigital />
-        </div>
-        
-        <div className="flex gap-2 items-center">
-          <Calculadora />
-
-          {vistaActual === 'calendario' ? (
-            <>
-              <button
-                onClick={() => setVistaActual('pacientes')}
-                className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 border border-emerald-200 shadow-sm transition-all"
-              >
-                <UserCircle size={16} className="text-emerald-600" /> 👥 Gestión Pacientes
-              </button>
-              <button
-                onClick={() => setVistaActual('personal')}
-                className="bg-cyan-50 text-cyan-700 hover:bg-cyan-100 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 border border-cyan-200 shadow-sm transition-all"
-              >
-                <Users size={16} className="text-cyan-600" /> 👥 Configurar Personal
-              </button>
-              <button
-                onClick={() => setVistaActual('vacaciones')}
-                className="bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 border border-amber-200 shadow-sm transition-all"
-              >
-                <CalendarDays size={16} className="text-amber-600" /> 🏖️ Vacaciones Personal
-              </button>
-              <button
-                onClick={() => setVistaActual('estadisticas')}
-                className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
-              >
-                <BarChart3 size={16} /> 📊 Ver Estadísticas
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setVistaActual('calendario')}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-xs flex items-center gap-2 transition-all shadow-sm"
-            >
-              <ArrowLeft size={16} /> 📅 Volver al Calendario
-            </button>
-          )}
-
-          <button
-            onClick={handleCerrarSesionReal}
-            className="bg-slate-100 text-slate-700 hover:bg-red-50 hover:text-red-700 font-bold py-2 px-3 rounded-xl text-xs flex items-center gap-1.5 border border-slate-200 shadow-sm transition-all"
-          >
-            <LogOut size={15} /> Salir
-          </button>
-        </div>
-      </header>
+      {/* 🌟 INTEGRACIÓN DE LA CABECERA MODULAR */}
+      <Header 
+        vistaActual={vistaActual}
+        setVistaActual={setVistaActual}
+        usuarioLogueado={usuarioLogueado}
+        onCerrarSesion={handleCerrarSesionReal}
+        onAbrirModalPassword={() => setModalPasswordAbierto(true)}
+      />
 
       {loading ? (
         <div className="h-64 flex flex-col items-center justify-center gap-3">
@@ -627,6 +578,14 @@ function App() {
             onDeletePaciente={handleDelPaciente}
           />
         )
+      )}
+
+      {/* MODAL CAMBIO DE CONTRASEÑA */}
+      {modalPasswordAbierto && (
+        <CambioPasswordModal 
+          usuarioLogueado={usuarioLogueado} 
+          onClose={() => setModalPasswordAbierto(false)} 
+        />
       )}
     </div>
   );
