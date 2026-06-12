@@ -6,6 +6,34 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+const normalizarCita = (cita) => {
+  const copia = { ...cita };
+  if ('observaciones' in copia && !copia.notas) {
+    copia.notas = copia.observaciones;
+    delete copia.observaciones;
+  }
+  if ('alergias_notas' in copia && !copia.notas) {
+    copia.notas = copia.alergias_notas;
+    delete copia.alergias_notas;
+  }
+  return copia;
+};
+
+const normalizarPersona = (persona) => {
+  if (!persona) return persona;
+  const copia = { ...persona };
+  
+  if ('apellidos' in copia) {
+    copia.apellido = copia.apellidos;
+    delete copia.apellidos;
+  }
+  
+  if ('role' in copia && !copia.rol) {
+    copia.rol = copia.role;
+  }
+  return copia;
+};
+
 export const apiCitas = {
   async getAll() {
     const { data, error } = await supabase
@@ -16,17 +44,19 @@ export const apiCitas = {
     return data;
   },
   async insert(cita) {
+    const citaNormalizada = normalizarCita(cita);
     const { data, error } = await supabase
       .from('citas')
-      .insert([cita])
+      .insert([citaNormalizada])
       .select();
     if (error) throw error;
     return data[0];
   },
   async update(id, datos) {
+    const datosNormalizados = normalizarCita(datos);
     const { data, error } = await supabase
       .from('citas')
-      .update(datos)
+      .update(datosNormalizados)
       .eq('id', id)
       .select();
     if (error) throw error;
@@ -44,29 +74,42 @@ export const apiCitas = {
 
 export const apiPersonal = {
   async getAll() {
+    console.log("🔍 [PASO 1 - API] Iniciando petición getAll() a la tabla 'personal' de Supabase...");
     const { data, error } = await supabase
       .from('personal')
       .select('*')
       .order('nombre', { ascending: true });
-    if (error) throw error;
-    return data;
+    
+    if (error) {
+      console.error("❌ [PASO 1 - API] Error crítico al consultar Supabase:", error);
+      throw error;
+    }
+    
+    console.log("📦 [PASO 2 - API] Datos brutos recibidos de Supabase:", data);
+    
+    const resultadoSaneado = (data || []).map(empleado => normalizarPersona(empleado));
+    console.log("✨ [PASO 3 - API] Datos mapeados y saneados listos para React:", resultadoSaneado);
+    
+    return resultadoSaneado;
   },
   async insert(empleado) {
+    const empleadoNormalizado = normalizarPersona(empleado);
     const { data, error } = await supabase
       .from('personal')
-      .insert([empleado])
+      .insert([empleadoNormalizado])
       .select();
     if (error) throw error;
-    return data[0];
+    return normalizarPersona(data[0]);
   },
   async update(id, datos) {
+    const datosNormalizados = normalizarPersona(datos);
     const { data, error } = await supabase
       .from('personal')
-      .update(datos)
+      .update(datosNormalizados)
       .eq('id', id)
       .select();
     if (error) throw error;
-    return data[0];
+    return normalizarPersona(data[0]);
   },
   async delete(id) {
     const { error } = await supabase
@@ -78,26 +121,20 @@ export const apiPersonal = {
   }
 };
 
-// SECCIÓN DE PACIENTES TOTALMENTE OPTIMIZADA, PAGINADA Y ORDENADA POR NOMBRE
 export const apiPacientes = {
-  // Trae los pacientes de 15 en 15 ordenados alfabéticamente por nombre
   async getPorPagina(pagina = 1, limite = 15) {
     const desde = (pagina - 1) * limite;
     const hasta = desde + limite - 1;
-
     const { data, error } = await supabase
       .from('pacientes')
       .select('*')
       .order('nombre', { ascending: true })
       .range(desde, hasta);
-      
     if (error) throw error;
-    return data;
+    return (data || []).map(p => normalizarPersona(p));
   },
-  // Búsqueda nativa ultrarrápida (también ordenada alfabéticamente)
   async search(termino) {
     if (!termino.trim()) return this.getPorPagina(1, 15);
-    
     const queryTerm = `%${termino.trim()}%`;
     const { data, error } = await supabase
       .from('pacientes')
@@ -105,26 +142,27 @@ export const apiPacientes = {
       .or(`nombre.ilike.${queryTerm},apellido.ilike.${queryTerm},dni.ilike.${queryTerm},telefono.ilike.${queryTerm}`)
       .order('nombre', { ascending: true })
       .limit(15); 
-      
     if (error) throw error;
-    return data;
+    return (data || []).map(p => normalizarPersona(p));
   },
   async insert(paciente) {
+    const pacienteNormalizado = normalizarPersona(paciente);
     const { data, error } = await supabase
       .from('pacientes')
-      .insert([paciente])
+      .insert([pacienteNormalizado])
       .select();
     if (error) throw error;
-    return data[0];
+    return normalizarPersona(data[0]);
   },
   async update(id, datos) {
+    const datosNormalizados = normalizarPersona(datos);
     const { data, error } = await supabase
       .from('pacientes')
-      .update(datos)
+      .update(datosNormalizados)
       .eq('id', id)
       .select();
     if (error) throw error;
-    return data[0];
+    return normalizarPersona(data[0]);
   },
   async delete(id) {
     const { error } = await supabase

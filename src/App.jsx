@@ -55,7 +55,7 @@ const PERSONAL_INICIAL_OBJ = [
     horario: {
       lunes: { trabaja: true, inicio: '09:00', fin: '19:00' },
       martes: { trabaja: true, inicio: '09:00', fin: '19:00' },
-      miercoles: { trabaja: true, inicio: '09:00', py: '19:00' },
+      miercoles: { trabaja: true, inicio: '09:00', fin: '19:00' }, // 🌟 CORREGIDO: 'fin' en lugar de 'py'
       jueves: { trabaja: true, inicio: '09:00', fin: '19:00' },
       viernes: { trabaja: true, inicio: '09:00', fin: '19:00' }
     }
@@ -104,7 +104,6 @@ function App() {
   const [advertencia, setAdvertencia] = useState('');
   const [citaSeleccionada, setCitaSeleccionada] = useState(null);
 
-  // 🌟 DECLARACIONES CON HOISTING GARANTIZADO (Se pueden llamar desde cualquier lugar)
   function compruebaTurnoEmpleado(nombreCompleto, fechaStr, hIniStr, hFinStr) {
     const empData = personalList.find(p => `${p.nombre} ${p.apellido || ''}`.trim() === nombreCompleto);
     if (!empData) return true; 
@@ -212,8 +211,18 @@ function App() {
         if (personalDB && personalDB.length > 0) {
           const plantillaInyectada = personalDB.map(emp => {
             const coincidenciaInicial = PERSONAL_INICIAL_OBJ.find(p => p.nombre.toLowerCase() === emp.nombre.toLowerCase());
+            
+            // NORMALIZACIÓN DEFENSIVA: Nos aseguramos de unificar rol/role, apellido y colores base
+            const rolDefinitivo = emp.rol || emp.role || coincidenciaInicial?.rol || 'Especialista';
+            const apellidoDefinitivo = emp.apellido !== undefined ? emp.apellido : (emp.apellidos || coincidenciaInicial?.apellido || '');
+            const colorDefinitivo = emp.color || coincidenciaInicial?.color || '#64748b';
+
             return {
               ...emp,
+              rol: rolDefinitivo,
+              role: rolDefinitivo,
+              apellido: apellidoDefinitivo,
+              color: colorDefinitivo,
               horario: emp.horario && Object.keys(emp.horario).length > 0 
                 ? emp.horario 
                 : (coincidenciaInicial?.horario || HORARIO_POR_DEFECTO)
@@ -267,7 +276,14 @@ function App() {
   const handleAddPersonal = async (nuevoTrabajador) => {
     try {
       const registroInsertado = await apiPersonal.insert(nuevoTrabajador);
-      setPersonalList([...personalList, registroInsertado]);
+      // Asegurar que el nuevo registro conserve las claves normalizadas en el estado local
+      const normalizado = {
+        ...registroInsertado,
+        rol: registroInsertado.rol || registroInsertado.role || 'Especialista',
+        role: registroInsertado.rol || registroInsertado.role || 'Especialista',
+        apellido: registroInsertado.apellido !== undefined ? registroInsertado.apellido : (registroInsertado.apellidos || '')
+      };
+      setPersonalList([...personalList, normalizado]);
     } catch (err) {
       alert('❌ Error al registrar el alta en Supabase.');
     }
@@ -276,11 +292,18 @@ function App() {
   const handleUpdatePersonal = async (id, datosActualizados) => {
     try {
       const registroActualizado = await apiPersonal.update(id, datosActualizados);
-      setPersonalList(personalList.map(emp => emp.id === id ? registroActualizado : emp));
+      const normalizado = {
+        ...registroActualizado,
+        rol: registroActualizado.rol || registroActualizado.role || 'Especialista',
+        role: registroActualizado.rol || registroActualizado.role || 'Especialista',
+        apellido: registroActualizado.apellido !== undefined ? registroActualizado.apellido : (registroActualizado.apellidos || '')
+      };
+
+      setPersonalList(personalList.map(emp => emp.id === id ? normalizado : emp));
       
       const actual = personalList.find(e => e.id === id);
       if (actual && principal === `${actual.nombre} ${actual.apellido || ''}`.trim()) {
-        setPrincipal(`${datosActualizados.nombre} ${datosActualizados.apellido || ''}`.trim());
+        setPrincipal(`${normalizado.nombre} ${normalizado.apellido || ''}`.trim());
       }
     } catch (err) {
       alert('❌ Error al actualizar los datos en Supabase.');
@@ -318,9 +341,9 @@ function App() {
     
     const nuevoPrincipal = datosActualizados.principal || citaOriginal.extendedProps.principal;
     const nuevoAsistente = datosActualizados.asistente || citaOriginal.extendedProps.asistente;
-    const nuevoTratamientoKey = datosActualizados.treatmentKey || citaOriginal.extendedProps.tratamientoKey;
+    const nuevoTratamientoKey = datosActualizados.tratamientoKey || citaOriginal.extendedProps.tratamientoKey;
     const nuevoPaciente = datosActualizados.paciente !== undefined ? datosActualizados.paciente : citaOriginal.extendedProps.paciente;
-    const nuevasObservaciones = datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : citaOriginal.extendedProps.observaciones;
+    const nuevasObservaciones = datosActualizados.notas !== undefined ? datosActualizados.notas : (datosActualizados.observaciones !== undefined ? datosActualizados.observaciones : citaOriginal.extendedProps.notas || citaOriginal.extendedProps.observaciones);
     
     let nuevoStart = datosActualizados.start || citaOriginal.start;
     let nuevoEnd = datosActualizados.end;
@@ -361,7 +384,7 @@ function App() {
       extendedProps: { 
         personalInvolucrado: equipo, tratamientoKey: nuevoTratamientoKey, 
         principal: nuevoPrincipal, asistente: nuevoAsistente,
-        paciente: nuevoPaciente, observaciones: nuevasObservaciones
+        paciente: nuevoPaciente, notas: nuevasObservaciones
       }
     };
 
@@ -467,7 +490,7 @@ function App() {
     
     const nuevaCita = {
       title, start: `${fecha}T${hIniT}:00`, end: `${fecha}T${hFinT}:00`, backgroundColor, estado: 'Pendiente',
-      extendedProps: { personalInvolucrado: equipo, tratamientoKey: tratamiento, principal, asistente, paciente: pacienteLimpio, observaciones: observaciones.trim() }
+      extendedProps: { personalInvolucrado: equipo, tratamientoKey: tratamiento, principal, asistente, paciente: pacienteLimpio, notas: observaciones.trim() }
     };
     
     try {

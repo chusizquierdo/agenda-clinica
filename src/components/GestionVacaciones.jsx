@@ -49,12 +49,11 @@ function GestionVacaciones({ personal, vacaciones, onAdd, onDelete, onVolver }) 
       .reduce((total, v) => total + calcularDiasLaborables(v.fecha_inicio, v.fecha_fin), 0);
   };
 
-  // 🌟 OPTIMIZADO: Buscador dinámico de color cruzado ultra-flexible
   const obtenerColorEmpleado = (nombreCompletoVacacion) => {
     const nombreVacClean = nombreCompletoVacacion.toLowerCase().trim();
     
     const emp = personal.find(p => {
-      const nombreFicha = `${p.nombre} ${p.apellidos || ''}`.trim().toLowerCase();
+      const nombreFicha = `${p.nombre} ${p.apellido || p.apellidos || ''}`.trim().toLowerCase();
       return nombreFicha === nombreVacClean || nombreVacClean.includes(p.nombre.toLowerCase()) || nombreFicha.includes(nombreVacClean);
     });
     
@@ -70,7 +69,7 @@ function GestionVacaciones({ personal, vacaciones, onAdd, onDelete, onVolver }) 
     if (!fechaInicio || !fechaFin) return setErrorLocal('⚠️ Selecciona ambas fechas del rango.');
     if (fechaInicio > fechaFin) return setErrorLocal('⚠️ La fecha de inicio no puede ser posterior a la de fin.');
 
-    const empData = personal.find(p => `${p.nombre} ${p.apellidos || ''}`.trim() === empleadoSeleccionado);
+    const empData = personal.find(p => `${p.nombre} ${p.apellido || p.apellidos || ''}`.trim() === empleadoSeleccionado);
     if (!empData) return setErrorLocal('⚠️ No se encontraron los datos del empleado.');
 
     const diasSolicitados = calcularDiasLaborables(fechaInicio, fechaFin);
@@ -85,6 +84,11 @@ function GestionVacaciones({ personal, vacaciones, onAdd, onDelete, onVolver }) 
       );
     }
 
+    // Normalizar el rol del empleado actual que está pidiendo las vacaciones
+    const rolActualLimpio = (empData.rol || empData.role || '').toLowerCase().trim();
+    const esMedicoActual = rolActualLimpio === 'medico' || rolActualLimpio === 'médico' || rolActualLimpio === 'especialista';
+    const esEnfermeroActual = rolActualLimpio === 'enfermero' || rolActualLimpio === 'enfermera' || rolActualLimpio === 'asistente';
+
     const inicio = new Date(fechaInicio);
     const fin = new Date(fechaFin);
     let actual = new Date(inicio);
@@ -97,28 +101,48 @@ function GestionVacaciones({ personal, vacaciones, onAdd, onDelete, onVolver }) 
         const dia = String(actual.getDate()).padStart(2, '0');
         const isoFecha = `${año}-${mes}-${dia}`;
 
+        // Obtener quién está ya de vacaciones en esta fecha específica
         const yaDeVacacionesEseDia = vacaciones.filter(v => isoFecha >= v.fecha_inicio && isoFecha <= v.fecha_fin);
         
-        const rolesAusentes = yaDeVacacionesEseDia.map(v => {
-          const pMatch = personal.find(p => `${p.nombre} ${p.apellidos || ''}`.trim().toLowerCase() === v.nombre_empleado.toLowerCase() || v.nombre_empleado.toLowerCase().includes(p.nombre.toLowerCase()));
-          return pMatch?.rol || '';
+        let medicosAusentes = 0;
+        let enfermerosAusentes = 0;
+
+        yaDeVacacionesEseDia.forEach(v => {
+          const pMatch = personal.find(p => {
+            const nomFicha = `${p.nombre} ${p.apellido || p.apellidos || ''}`.trim().toLowerCase();
+            return nomFicha === v.nombre_empleado.toLowerCase() || v.nombre_empleado.toLowerCase().includes(p.nombre.toLowerCase());
+          });
+          
+          if (pMatch) {
+            const r = (pMatch.rol || pMatch.role || '').toLowerCase().trim();
+            if (r === 'medico' || r === 'médico' || r === 'especialista') medicosAusentes++;
+            if (r === 'enfermero' || r === 'enfermera' || r === 'asistente') enfermerosAusentes++;
+          }
         });
 
-        rolesAusentes.push(empData.rol);
+        // Sumar al empleado que está intentando enviar el formulario ahora mismo
+        if (esMedicoActual) medicosAusentes++;
+        if (esEnfermeroActual) enfermerosAusentes++;
 
-        const doctorasAusentes = rolesAusentes.filter(r => r === 'Especialista').length;
-        const auxiliaresAusentes = rolesAusentes.filter(r => r === 'Asistente').length;
+        // Contar el personal total de la clínica con sus roles normalizados
+        const totalMedicosContratados = personal.filter(p => {
+          const r = (p.rol || p.role || '').toLowerCase().trim();
+          return r === 'medico' || r === 'médico' || r === 'especialista';
+        }).length;
 
-        const totalDoctorasContratadas = personal.filter(p => p.rol === 'Especialista').length;
-        const totalAuxiliaresContratadas = personal.filter(p => p.rol === 'Asistente').length;
+        const totalEnfermerosContratados = personal.filter(p => {
+          const r = (p.rol || p.role || '').toLowerCase().trim();
+          return r === 'enfermero' || r === 'enfermera' || r === 'asistente';
+        }).length;
 
-        if (empData.rol === 'Especialista' && doctorasAusentes >= totalDoctorasContratadas) {
+        // Comprobación estricta de servicios mínimos
+        if (esMedicoActual && medicosAusentes >= totalMedicosContratados) {
           return setErrorLocal(
-            `❌ Conflicto de servicios mínimos el día ${formatearFechaEuropea(isoFecha)}: Rut y Miriam no pueden estar de vacaciones el mismo día. La clínica requiere de al menos una doctora Especialista disponible.`
+            `❌ Conflicto de servicios mínimos el día ${formatearFechaEuropea(isoFecha)}: Rut y Miriam no pueden estar de vacaciones al mismo tiempo. La clínica requiere al menos una doctora Especialista disponible.`
           );
         }
 
-        if (empData.rol === 'Asistente' && auxiliaresAusentes >= totalAuxiliaresContratadas) {
+        if (esEnfermeroActual && enfermerosAusentes >= totalEnfermerosContratados) {
           return setErrorLocal(
             `❌ Conflicto de servicios mínimos el día ${formatearFechaEuropea(isoFecha)}: María no puede solicitar estas fechas porque la clínica se quedaría sin personal Asistente/Auxiliar.`
           );
@@ -211,8 +235,8 @@ function GestionVacaciones({ personal, vacaciones, onAdd, onDelete, onVolver }) 
                 >
                   <option value="">Selecciona personal...</option>
                   {personal.map(p => {
-                    const nombreCompleto = `${p.nombre} ${p.apellidos || ''}`.trim();
-                    return <option key={p.id} value={nombreCompleto}>{nombreCompleto} ({p.rol})</option>;
+                    const nombreCompleto = `${p.nombre} ${p.apellido || p.apellidos || ''}`.trim();
+                    return <option key={p.id} value={nombreCompleto}>{nombreCompleto} ({p.rol || p.role || 'Personal'})</option>;
                   })}
                 </select>
               </div>
@@ -279,14 +303,13 @@ function GestionVacaciones({ personal, vacaciones, onAdd, onDelete, onVolver }) 
           </form>
         </div>
 
-        {/* Recuadro de Auditoría claro y suavizado */}
         <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl shadow-sm">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
             <Sparkles size={14} className="text-amber-500" /> Auditoría de días ({new Date().getFullYear()})
           </h3>
           <div className="space-y-3">
             {personal.map(p => {
-              const nombreCompleto = `${p.nombre} ${p.apellidos || ''}`.trim();
+              const nombreCompleto = `${p.nombre} ${p.apellido || p.apellidos || ''}`.trim();
               const consumidos = getDiasConsumidosAñoActual(nombreCompleto);
               const disponibles = LIMITE_LEGAL_LABORABLES - consumidos;
               const porcentaje = (consumidos / LIMITE_LEGAL_LABORABLES) * 100;
