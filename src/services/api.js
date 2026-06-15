@@ -74,7 +74,6 @@ export const apiCitas = {
 
 export const apiPersonal = {
   async getAll() {
-    console.log("🔍 [PASO 1 - API] Iniciando petición getAll() a la tabla 'personal' de Supabase...");
     const { data, error } = await supabase
       .from('personal')
       .select('*')
@@ -85,10 +84,8 @@ export const apiPersonal = {
       throw error;
     }
     
-    console.log("📦 [PASO 2 - API] Datos brutos recibidos de Supabase:", data);
     
     const resultadoSaneado = (data || []).map(empleado => normalizarPersona(empleado));
-    console.log("✨ [PASO 3 - API] Datos mapeados y saneados listos para React:", resultadoSaneado);
     
     return resultadoSaneado;
   },
